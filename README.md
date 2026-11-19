@@ -44,6 +44,24 @@ Options:
 
 Run `./deploy.sh` again after copying new code: it keeps the existing secrets, password and ports.
 
+### Windows server with Docker inside WSL
+
+Run `deploy.sh` and the `docker compose` commands **inside WSL**. The project folder `C:\IntelliferSupport` is `/mnt/c/IntelliferSupport` there. Under WSL, `deploy.sh` also checks the ports Windows programs already use, because WSL forwards the hub's ports to Windows' `localhost`.
+
+Windows does not start WSL at boot. To bring the hub back after a reboot, register the startup task once, in PowerShell **as Administrator**, signed in as the user that owns the WSL distribution:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\IntelliferSupport\windows\install-autostart.ps1
+```
+
+It starts WSL and Docker at boot, before anyone signs in; Docker then restarts the hub's containers (`restart: unless-stopped`).
+
+| To | Run inside WSL, in `/mnt/c/IntelliferSupport` | After a reboot |
+| --- | --- | --- |
+| Turn the hub off | `docker compose --profile openwa stop` | stays off |
+| Turn it back on | `docker compose --profile openwa start` | comes back by itself again |
+| Update after `git pull` | `./deploy.sh --with-whatsapp` | comes back by itself |
+
 All ports are published on `127.0.0.1` only. To reach the API from outside the server, put a reverse proxy (nginx, Caddy) with HTTPS in front of `HUB_API_PORT`, or set `HUB_API_BIND=0.0.0.0` only on a private network.
 
 In the commands below, `API` is `http://127.0.0.1:<HUB_API_PORT>` and `OWA` is `http://127.0.0.1:<OPENWA_PORT>` (8080 and 8081 unless `deploy.sh` moved them).

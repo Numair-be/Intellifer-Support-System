@@ -26,6 +26,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
 
   hub-api:
     build:

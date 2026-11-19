@@ -6,3 +6,5 @@
 .env.example text eol=lf
 docker-compose.yml text eol=lf
 docker/Dockerfile text eol=lf
+# PowerShell on the Windows host
+*.ps1 text eol=crlf

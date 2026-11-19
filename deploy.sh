@@ -105,7 +105,19 @@ docker_ports() {
     | grep -oE ':[0-9]+->' | tr -d ':>-' | sort -un
 }
 
-LISTENING="$(listening_ports)"
+# Under WSL, the hub's ports are also forwarded to Windows' localhost, so a port a Windows program already uses
+# (IIS, SQL Server, ...) would clash too. Ask Windows as well. Ports the hub itself holds still count as free.
+windows_ports() {
+  grep -qi microsoft /proc/version 2>/dev/null || return 0
+  local netstat_exe
+  netstat_exe="$(command -v netstat.exe || echo /mnt/c/Windows/System32/netstat.exe)"
+  [ -x "$netstat_exe" ] || { warn "Running under WSL but cannot run netstat.exe; Windows ports are not checked."; return 0; }
+  "$netstat_exe" -ano 2>/dev/null | tr -d '\r' | awk '$1 ~ /^TCP/ && $4 == "LISTENING" {print $2}' \
+    | sed -E 's/.*:([0-9]+)$/\1/' | grep -E '^[0-9]+$' | sort -un
+}
+
+LISTENING="$( { listening_ports; windows_ports; } | sort -un)"
+grep -qi microsoft /proc/version 2>/dev/null && echo "  (WSL: checking Windows ports too)"
 OURS="$(docker_ports ours || true)"
 OTHERS="$(docker_ports others || true)"
 TAKEN_BY_HUB=" "
