@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Intellifer.Hub.Api/Intellifer.Hub.Api.csproj" />
+    <Project Path="src/Intellifer.Hub.Application/Intellifer.Hub.Application.csproj" />
+    <Project Path="src/Intellifer.Hub.Domain/Intellifer.Hub.Domain.csproj" />
+    <Project Path="src/Intellifer.Hub.Infrastructure/Intellifer.Hub.Infrastructure.csproj" />
+    <Project Path="src/Intellifer.Hub.Tools.GmailConsent/Intellifer.Hub.Tools.GmailConsent.csproj" />
+    <Project Path="src/Intellifer.Hub.Worker/Intellifer.Hub.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Intellifer.Hub.Application.Tests/Intellifer.Hub.Application.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Must stay LF: run by bash on the Linux server, read by Docker Compose
+*.sh text eol=lf
+.env.example text eol=lf
+docker-compose.yml text eol=lf
+docker/Dockerfile text eol=lf

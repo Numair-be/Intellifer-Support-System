@@ -1,0 +1,152 @@
+name: intellifer
+
+networks:
+  intellifer:
+    name: intellifer
+
+volumes:
+  hub-db-data:
+  openwa-data:
+
+services:
+  hub-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-intellifer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-intellifer}
+      POSTGRES_DB: ${POSTGRES_DB:-intellifer_hub}
+    ports:
+      - "127.0.0.1:${HUB_DB_PORT:-5432}:5432"
+    volumes:
+      - hub-db-data:/var/lib/postgresql/data
+    networks:
+      - intellifer
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  hub-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Hub: Host=hub-db;Port=5432;Database=${POSTGRES_DB:-intellifer_hub};Username=${POSTGRES_USER:-intellifer};Password=${POSTGRES_PASSWORD:-intellifer}
+      Hub__ApiKey: ${HUB_API_KEY:-dev-only-change-me}
+      Hub__DefaultPhoneRegion: ${DEFAULT_PHONE_REGION:-IN}
+      OpenWa__WebhookSecret: ${OPENWA_WEBHOOK_SECRET:-dev-only-openwa-secret}
+      OpenWa__BaseUrl: http://openwa:2785
+      OpenWa__ApiKey: ${WA_API_KEY:-dev-only-openwa-api-key}
+      OpenWa__SessionName: ${WA_SESSION_NAME:-support}
+      OpenWa__LinkPhone: ${WA_LINK_PHONE:-}
+      Odoo__Url: ${ODOO_URL:-}
+      Odoo__Database: ${ODOO_DB:-}
+      Odoo__Login: ${ODOO_LOGIN:-}
+      Odoo__ApiKey: ${ODOO_API_KEY:-}
+      Plane__Url: ${PLANE_URL:-}
+      Plane__ApiKey: ${PLANE_API_KEY:-}
+      Plane__WorkspaceSlug: ${PLANE_WORKSPACE_SLUG:-}
+      Plane__ProjectId: ${PLANE_PROJECT_ID:-}
+      Plane__ProjectMap: ${PLANE_PROJECT_MAP:-}
+      Plane__StatusReplies: ${PLANE_STATUS_REPLIES:-true}
+      Plane__AcknowledgeIntake: ${PLANE_ACKNOWLEDGE_INTAKE:-true}
+      Plane__WhatsAppQuietSeconds: ${PLANE_WHATSAPP_QUIET_SECONDS:-120}
+      Plane__EmailQuietSeconds: ${PLANE_EMAIL_QUIET_SECONDS:-0}
+      Plane__NewTicketAfterIdleHours: ${PLANE_NEW_TICKET_AFTER_IDLE_HOURS:-24}
+      Plane__AttachmentMaxMegabytes: ${PLANE_ATTACHMENT_MAX_MB:-5}
+      Plane__StatusPollMinutes: ${PLANE_STATUS_POLL_MINUTES:-2}
+      Plane__ReplySignature: ${REPLY_SIGNATURE:-Intellifer Support}
+      Plane__IntakeKeywords: ${PLANE_INTAKE_KEYWORDS:-bug,bugs,error,errors,issue,issues,problem,not working,doesn't work,does not work,isn't working,is not working,broken,crash,crashes,crashed,crashing,exception,failed,failing,failure,glitch,unable to}
+    ports:
+      - "${HUB_API_BIND:-127.0.0.1}:${HUB_API_PORT:-8080}:8080"
+    depends_on:
+      hub-db:
+        condition: service_healthy
+    networks:
+      - intellifer
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dotnet", "Intellifer.Hub.Api.dll", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  hub-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: worker
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__Hub: Host=hub-db;Port=5432;Database=${POSTGRES_DB:-intellifer_hub};Username=${POSTGRES_USER:-intellifer};Password=${POSTGRES_PASSWORD:-intellifer}
+      Hub__DefaultPhoneRegion: ${DEFAULT_PHONE_REGION:-IN}
+      Gmail__ClientId: ${GMAIL_CLIENT_ID:-}
+      Gmail__ClientSecret: ${GMAIL_CLIENT_SECRET:-}
+      Gmail__RefreshToken: ${GMAIL_REFRESH_TOKEN:-}
+      Gmail__Mailbox: ${GMAIL_MAILBOX:-me}
+      Gmail__PollIntervalSeconds: ${GMAIL_POLL_INTERVAL_SECONDS:-45}
+      Gmail__BootstrapDays: ${GMAIL_BOOTSTRAP_DAYS:-7}
+      Gmail__BootstrapMaxMessages: ${GMAIL_BOOTSTRAP_MAX_MESSAGES:-50}
+      Gmail__ProcessedLabel: ${GMAIL_PROCESSED_LABEL:-Support}
+      OpenWa__BaseUrl: http://openwa:2785
+      OpenWa__ApiKey: ${WA_API_KEY:-dev-only-openwa-api-key}
+      OpenWa__WebhookSecret: ${OPENWA_WEBHOOK_SECRET:-dev-only-openwa-secret}
+      OpenWa__SessionName: ${WA_SESSION_NAME:-support}
+      Odoo__Url: ${ODOO_URL:-}
+      Odoo__Database: ${ODOO_DB:-}
+      Odoo__Login: ${ODOO_LOGIN:-}
+      Odoo__ApiKey: ${ODOO_API_KEY:-}
+      Plane__Url: ${PLANE_URL:-}
+      Plane__ApiKey: ${PLANE_API_KEY:-}
+      Plane__WorkspaceSlug: ${PLANE_WORKSPACE_SLUG:-}
+      Plane__ProjectId: ${PLANE_PROJECT_ID:-}
+      Plane__ProjectMap: ${PLANE_PROJECT_MAP:-}
+      Plane__StatusReplies: ${PLANE_STATUS_REPLIES:-true}
+      Plane__AcknowledgeIntake: ${PLANE_ACKNOWLEDGE_INTAKE:-true}
+      Plane__WhatsAppQuietSeconds: ${PLANE_WHATSAPP_QUIET_SECONDS:-120}
+      Plane__EmailQuietSeconds: ${PLANE_EMAIL_QUIET_SECONDS:-0}
+      Plane__NewTicketAfterIdleHours: ${PLANE_NEW_TICKET_AFTER_IDLE_HOURS:-24}
+      Plane__AttachmentMaxMegabytes: ${PLANE_ATTACHMENT_MAX_MB:-5}
+      Plane__StatusPollMinutes: ${PLANE_STATUS_POLL_MINUTES:-2}
+      Plane__ReplySignature: ${REPLY_SIGNATURE:-Intellifer Support}
+      Plane__IntakeKeywords: ${PLANE_INTAKE_KEYWORDS:-bug,bugs,error,errors,issue,issues,problem,not working,doesn't work,does not work,isn't working,is not working,broken,crash,crashes,crashed,crashing,exception,failed,failing,failure,glitch,unable to}
+    depends_on:
+      hub-db:
+        condition: service_healthy
+    networks:
+      - intellifer
+    restart: unless-stopped
+
+  # WhatsApp gateway: OpenWA by rmyndharis (https://github.com/rmyndharis/OpenWA), the same version and setup as
+  # WALocal: default engine (whatsapp-web.js), SQLite and local files. The login is kept in the openwa-data volume,
+  # and AUTO_START_SESSIONS reconnects it after a restart without a new link.
+  openwa:
+    profiles: ["openwa"]
+    image: ghcr.io/rmyndharis/openwa:0.29.1
+    environment:
+      NODE_ENV: production
+      PORT: "2785"
+      # The hub's WA_API_KEY becomes the gateway's admin key, so nobody has to copy one out of a log.
+      API_MASTER_KEY: ${WA_API_KEY:-dev-only-openwa-api-key}
+      AUTO_START_SESSIONS: "true"
+      # Webhooks to private addresses are blocked unless allowed: the hub is one.
+      SSRF_ALLOWED_HOSTS: hub-api
+      # Add the real phone number to messages from WhatsApp's private ids (@lid).
+      RESOLVE_LID_TO_PHONE: "true"
+      TZ: ${TZ:-Asia/Kolkata}
+    ports:
+      - "127.0.0.1:${OPENWA_PORT:-8081}:2785"
+    volumes:
+      - openwa-data:/app/data
+    shm_size: "1gb"
+    depends_on:
+      - hub-api
+    networks:
+      - intellifer
+    restart: unless-stopped
+    stop_grace_period: 75s
