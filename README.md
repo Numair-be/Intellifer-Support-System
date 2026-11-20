@@ -128,6 +128,43 @@ An Odoo client project links to the Plane project whose name or identifier equal
 
 See every link: `curl -H "X-Api-Key: $HUB_API_KEY" API/api/plane/check`.
 
+## Projects page
+
+`http://127.0.0.1:<HUB_API_PORT>/admin/` (on the server; sign in with `HUB_API_KEY`). One place to keep, per project:
+
+- the **project**, named exactly as in Plane: the page shows whether it is linked to a Plane project with Intake on;
+- its **employees** (name and WhatsApp number, any format): when an intake item is created for the project, each one gets a WhatsApp message with the ticket number and a link (`PLANE_TEAM_CHANNELS`);
+- its **connected apps**, which report errors to `POST /api/errors`: connecting one shows its key once; apps can be turned off, given a new key or removed.
+
+This replaces the Odoo employee API until it is ready. The same data is available as `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` and `POST/PUT/DELETE /api/projects/{id}/members[/{memberId}]`.
+
+## Errors from apps
+
+Apps on the server can report errors to the hub. Each one becomes an intake item in the app's Plane project, titled with "Error", the date and where it came from, e.g. `[Error] crm-backend / orders-job – 2026-11-20 19:25 (UTC+05:30)`, with the message exactly as sent in the body.
+
+**Register an app** (hub admin key) and note the key it returns, which is shown only once:
+
+```bash
+curl -s -X POST -H "X-Api-Key: $HUB_API_KEY" -H "Content-Type: application/json" \
+  -d '{"name":"crm-backend","project":"Support Test"}' API/api/apps
+```
+
+`project` is the project name or code; it is matched to a Plane project like Odoo client projects (case, spaces and punctuation ignored, `PLANE_PROJECT_MAP` overrides). Intake must be on in that Plane project.
+
+**From the app**, with its own key:
+
+```bash
+curl -s -X POST -H "X-App-Key: hubapp_…" -H "Content-Type: application/json" \
+  -d '{"message":"NullReferenceException in OrderService.Save()\n   at ...","source":"orders-job","level":"error"}' \
+  http://127.0.0.1:<HUB_API_PORT>/api/errors
+```
+
+Only `message` is required; `source` (which part of the app), `level` and `occurredAt` (ISO 8601) are optional. A plain-text body is taken as the message. The answer is `202 Accepted` straight away; the worker creates the Plane item (with retries if Plane is down).
+
+The same error from the same app within an hour (numbers and ids ignored) is counted instead of opening another ticket, and each app opens at most 30 tickets an hour; more are stored and skipped (`APP_ERROR_REPEAT_MINUTES`, `APP_ERROR_MAX_TICKETS_PER_HOUR`).
+
+Manage apps with the hub admin key: `GET /api/apps`, `PATCH /api/apps/{id}` with `{"project": "...", "active": false}`, `POST /api/apps/{id}/key` (new key; the old one stops working), `DELETE /api/apps/{id}`.
+
 ## Settings
 
 All in `.env` (documented in `.env.example`). The ones most likely to change:
@@ -142,6 +179,8 @@ All in `.env` (documented in `.env.example`). The ones most likely to change:
 | `PLANE_STATUS_REPLIES` | true | Reply when the ticket changes status (checked every `PLANE_STATUS_POLL_MINUTES`). |
 | `PLANE_ATTACHMENT_MAX_MB` | 5 | Largest image copied to Plane (Plane's own limit defaults to 5 MB). |
 | `REPLY_SIGNATURE` | Intellifer Support | Signs the replies. |
+| `PLANE_NOTIFY_TEAM` | true | Tell the employees on the client project about each new intake item. Waits for the Odoo employee lookup (not connected yet; until then nothing is sent). |
+| `PLANE_TEAM_CHANNELS` | whatsapp | How employees are told: `whatsapp` (email when they have no phone), `email`, or `both`. |
 
 After changing `.env`, run `./deploy.sh` again.
 

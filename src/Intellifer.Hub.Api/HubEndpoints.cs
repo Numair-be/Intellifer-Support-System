@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Intellifer.Hub.Api;
 
-public static class HubEndpoints
+public static partial class HubEndpoints
 {
     public static void MapHubEndpoints(this WebApplication app)
     {
@@ -17,6 +17,9 @@ public static class HubEndpoints
         }));
 
         app.MapPost("/webhooks/openwa", ReceiveOpenWa);
+
+        // Apps on the server report errors here with their own key (X-App-Key), not the hub's admin key.
+        app.MapPost("/api/errors", ReceiveAppError);
 
         app.MapGet("/health/openwa", async (IOpenWaSessionProbe probe, IChannelHealthStore health, CancellationToken cancellationToken) =>
         {
@@ -140,6 +143,130 @@ public static class HubEndpoints
                 return Results.Ok(new { status = "logged out", next = "Link again with POST /api/whatsapp/link." });
             }));
 
+        // Projects page: projects (same names as in Plane), their employees, and the apps connected to them.
+        api.MapGet("/projects", async (IProjectAdmin projects, IAppRegistry apps, PlaneProjectResolver plane, CancellationToken cancellationToken) =>
+        {
+            var list = await projects.ListAsync(cancellationToken);
+            var allApps = await apps.ListAsync(cancellationToken);
+            var planeProjects = await TryPlaneProjectsAsync(plane, cancellationToken);
+            return Results.Ok(list.Select(project => new
+            {
+                project.Id,
+                project.Name,
+                project.Notes,
+                project.MemberCount,
+                AppCount = allApps.Count(app => SameProject(app.Project, project.Name)),
+                Plane = PlaneLink(project.Name, planeProjects),
+                project.UpdatedAt
+            }));
+        });
+
+        api.MapGet("/projects/{id:guid}", async (Guid id, IProjectAdmin projects, IAppRegistry apps, PlaneProjectResolver plane, CancellationToken cancellationToken) =>
+        {
+            var project = await projects.GetAsync(id, cancellationToken);
+            if (project is null)
+                return Results.NotFound();
+            var connected = (await apps.ListAsync(cancellationToken)).Where(app => SameProject(app.Project, project.Name)).ToList();
+            return Results.Ok(new
+            {
+                project.Id,
+                project.Name,
+                project.Notes,
+                project.CreatedAt,
+                project.UpdatedAt,
+                project.Members,
+                Apps = connected,
+                Plane = PlaneLink(project.Name, await TryPlaneProjectsAsync(plane, cancellationToken))
+            });
+        });
+
+        api.MapPost("/projects", async (ProjectRequest request, IProjectAdmin projects, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return Results.BadRequest(new { error = "Name is required: the same name as the project in Plane." });
+            var (result, id) = await projects.CreateAsync(request.Name, request.Notes, cancellationToken);
+            return result == ProjectSaveResult.NameTaken
+                ? Results.Conflict(new { error = $"A project called '{request.Name.Trim()}' already exists." })
+                : Results.Created($"/api/projects/{id}", new { id });
+        });
+
+        api.MapPut("/projects/{id:guid}", async (Guid id, ProjectRequest request, IProjectAdmin projects, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return Results.BadRequest(new { error = "Name is required: the same name as the project in Plane." });
+            return await projects.UpdateAsync(id, request.Name, request.Notes, cancellationToken) switch
+            {
+                ProjectSaveResult.NotFound => Results.NotFound(),
+                ProjectSaveResult.NameTaken => Results.Conflict(new { error = $"A project called '{request.Name.Trim()}' already exists." }),
+                _ => Results.NoContent()
+            };
+        });
+
+        api.MapDelete("/projects/{id:guid}", async (Guid id, IProjectAdmin projects, CancellationToken cancellationToken) =>
+            await projects.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        api.MapPost("/projects/{id:guid}/members", async (
+            Guid id, MemberRequest request, IProjectAdmin projects, ISenderNormalizer normalizer, CancellationToken cancellationToken) =>
+        {
+            if (Validate(request, normalizer, out var whatsApp) is { } invalid)
+                return invalid;
+            return await projects.AddMemberAsync(id, request.Name!, whatsApp, cancellationToken) is { } member
+                ? Results.Created($"/api/projects/{id}/members/{member.Id}", member)
+                : Results.NotFound();
+        });
+
+        api.MapPut("/projects/{id:guid}/members/{memberId:guid}", async (
+            Guid id, Guid memberId, MemberRequest request, IProjectAdmin projects, ISenderNormalizer normalizer, CancellationToken cancellationToken) =>
+        {
+            if (Validate(request, normalizer, out var whatsApp) is { } invalid)
+                return invalid;
+            return await projects.UpdateMemberAsync(id, memberId, request.Name!, whatsApp, cancellationToken) is { } member
+                ? Results.Ok(member)
+                : Results.NotFound();
+        });
+
+        api.MapDelete("/projects/{id:guid}/members/{memberId:guid}", async (Guid id, Guid memberId, IProjectAdmin projects, CancellationToken cancellationToken) =>
+            await projects.DeleteMemberAsync(id, memberId, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+        // Apps that may report errors, and the project each belongs to (until this moves to Odoo).
+        api.MapGet("/apps", async (IAppRegistry apps, CancellationToken cancellationToken) =>
+            Results.Ok(await apps.ListAsync(cancellationToken)));
+
+        api.MapPost("/apps", async (NewAppRequest request, IAppRegistry apps, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name) || !AppNamePattern().IsMatch(request.Name.Trim()))
+                return Results.BadRequest(new { error = "name: 2-100 letters, digits, dot, dash or underscore, e.g. crm-backend." });
+            if (string.IsNullOrWhiteSpace(request.Project))
+                return Results.BadRequest(new { error = "project: the project name or code its errors belong to, e.g. Support Test." });
+
+            var key = AppKeys.NewKey();
+            var created = await apps.CreateAsync(request.Name, request.Project, AppKeys.Hash(key), AppKeys.Hint(key), cancellationToken);
+            return created is null
+                ? Results.Conflict(new { error = $"An app called '{request.Name.Trim()}' already exists." })
+                : Results.Created($"/api/apps/{created.Id}", new
+                {
+                    app = created,
+                    key,
+                    note = "Store this key in the app now: it is shown only once. The app sends it as the X-App-Key header to POST /api/errors."
+                });
+        });
+
+        api.MapPatch("/apps/{id:guid}", async (Guid id, UpdateAppRequest request, IAppRegistry apps, CancellationToken cancellationToken) =>
+            await apps.UpdateAsync(id, request.Project, request.Active, cancellationToken) is { } updated
+                ? Results.Ok(updated)
+                : Results.NotFound());
+
+        api.MapPost("/apps/{id:guid}/key", async (Guid id, IAppRegistry apps, CancellationToken cancellationToken) =>
+        {
+            var key = AppKeys.NewKey();
+            return await apps.ReplaceKeyAsync(id, AppKeys.Hash(key), AppKeys.Hint(key), cancellationToken) is { } updated
+                ? Results.Ok(new { app = updated, key, note = "The old key stops working now. This key is shown only once." })
+                : Results.NotFound();
+        });
+
+        api.MapDelete("/apps/{id:guid}", async (Guid id, IAppRegistry apps, CancellationToken cancellationToken) =>
+            await apps.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
         api.MapGet("/conversations", async (int? take, IInboundQuery query, CancellationToken cancellationToken) =>
             Results.Ok(await query.ListConversationsAsync(Clamp(take, 50, 100), cancellationToken)));
 
@@ -205,6 +332,121 @@ public static class HubEndpoints
 
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// An error from an app: JSON {"message", "source"?, "level"?, "occurredAt"?} or the error as plain text.
+    /// Answers 202 straight away; the Plane intake item is created by the worker.
+    /// </summary>
+    private static async Task<IResult> ReceiveAppError(
+        HttpContext context,
+        IAppRegistry apps,
+        AppErrorIntake intake,
+        CancellationToken cancellationToken)
+    {
+        var key = context.Request.Headers["X-App-Key"].ToString();
+        if (string.IsNullOrWhiteSpace(key))
+            return Results.Json(new { error = "Send the app's key in the X-App-Key header." }, statusCode: StatusCodes.Status401Unauthorized);
+        var app = await apps.FindByKeyHashAsync(AppKeys.Hash(key), cancellationToken);
+        if (app is null)
+            return Results.Json(new { error = "Unknown app key." }, statusCode: StatusCodes.Status401Unauthorized);
+        if (!app.Active)
+            return Results.Json(new { error = $"App {app.Name} is disabled." }, statusCode: StatusCodes.Status403Forbidden);
+
+        AppErrorReport report;
+        if (context.Request.HasJsonContentType())
+        {
+            AppErrorRequest? body;
+            try
+            {
+                body = await context.Request.ReadFromJsonAsync<AppErrorRequest>(cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new { error = "The body is not valid JSON." });
+            }
+
+            report = new AppErrorReport(body?.Message ?? "", body?.Source, body?.Level, body?.OccurredAt);
+        }
+        else
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            report = new AppErrorReport(await reader.ReadToEndAsync(cancellationToken), null, null, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(report.Message))
+            return Results.BadRequest(new { error = "message is empty." });
+        if (report.Message.Length > AppErrorIntake.MaxMessageLength)
+            return Results.Json(new { error = $"message is longer than {AppErrorIntake.MaxMessageLength} characters." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+
+        var accepted = await intake.AcceptAsync(app, report, cancellationToken);
+        return Results.Json(new
+        {
+            id = accepted.ErrorId,
+            app = app.Name,
+            project = app.Project,
+            accepted.Repeat,
+            accepted.Occurrences,
+            accepted.Status
+        }, statusCode: StatusCodes.Status202Accepted);
+    }
+
+    public sealed record ProjectRequest(string? Name, string? Notes);
+
+    public sealed record MemberRequest(string? Name, string? WhatsApp);
+
+    private static IResult? Validate(MemberRequest request, ISenderNormalizer normalizer, out string whatsApp)
+    {
+        whatsApp = "";
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return Results.BadRequest(new { error = "Employee name is required." });
+        if (string.IsNullOrWhiteSpace(request.WhatsApp))
+            return Results.BadRequest(new { error = "WhatsApp number is required." });
+
+        // Any format: +91 98765 43210, 098765-43210, 9876543210 (default region from DEFAULT_PHONE_REGION).
+        var normalized = normalizer.Normalize(ChannelType.WhatsApp, request.WhatsApp);
+        var digits = normalized.Count(char.IsDigit);
+        if (!normalized.StartsWith('+') || digits is < 8 or > 15)
+            return Results.BadRequest(new { error = $"'{request.WhatsApp}' is not a phone number. Use the full number, e.g. +91 98765 43210." });
+        whatsApp = normalized;
+        return null;
+    }
+
+    private static bool SameProject(string a, string b) =>
+        PlaneProjectResolver.Normalize(a) == PlaneProjectResolver.Normalize(b);
+
+    private static async Task<IReadOnlyList<PlaneProject>?> TryPlaneProjectsAsync(PlaneProjectResolver plane, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await plane.GetProjectsAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Whether a Plane project with this name exists, and whether intake items can be created in it.</summary>
+    private static object PlaneLink(string name, IReadOnlyList<PlaneProject>? planeProjects)
+    {
+        if (planeProjects is null)
+            return new { status = "unknown", detail = "Plane could not be reached." };
+        var match = PlaneProjectResolver.Find(new ClientProject(name, name), planeProjects, new Dictionary<string, string>());
+        if (match is null)
+            return new { status = "missing", detail = "No Plane project has this name. Use the exact Plane project name." };
+        return match.IntakeEnabled
+            ? new { status = "linked", detail = $"{match.Name} ({match.Identifier})" }
+            : new { status = "intake-off", detail = $"{match.Name} ({match.Identifier}): turn on Intake in Plane." };
+    }
+
+    public sealed record AppErrorRequest(string? Message, string? Source, string? Level, DateTimeOffset? OccurredAt);
+
+    public sealed record NewAppRequest(string? Name, string? Project);
+
+    public sealed record UpdateAppRequest(string? Project, bool? Active);
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9._-]{2,100}$")]
+    private static partial System.Text.RegularExpressions.Regex AppNamePattern();
 
     private static async Task<IResult> WhatsAppCallAsync(IWhatsAppGateway whatsApp, Func<Task<IResult>> call)
     {

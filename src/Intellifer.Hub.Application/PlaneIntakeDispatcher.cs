@@ -18,11 +18,12 @@ public sealed class PlaneIntakeDispatcher(
     ICustomerDirectory customers,
     PlaneProjectResolver projects,
     IssueClassifier classifier,
+    IProjectTeamDirectory team,
     IOptions<PlaneOptions> options,
     TimeProvider clock,
     ILogger<PlaneIntakeDispatcher> logger)
 {
-    private sealed record SenderCheck(string? Reason, CustomerMatch? Match, PlaneProject? Project);
+    private sealed record SenderCheck(string? Reason, CustomerMatch? Match, PlaneProject? Project, ClientProject? ClientProject = null);
 
     /// <summary>Which Plane project the sender's intake goes to, or why it may not open one.</summary>
     private async Task<SenderCheck> CheckSenderAsync(PlaneJob job, CancellationToken cancellationToken)
@@ -45,10 +46,10 @@ public sealed class PlaneIntakeDispatcher(
         if (resolved is null)
             return new($"{match.Name} ({key.Value}) is a client contact of {names}, which has no matching Plane project.", match, null);
 
-        var (_, target) = resolved.Value;
+        var (client, target) = resolved.Value;
         if (!target.IntakeEnabled)
             return new($"Intake is off in Plane project {target.Name} ({target.Identifier}).", match, target);
-        return new(null, match, target);
+        return new(null, match, target, client);
     }
 
     public async Task<int> RunOnceAsync(CancellationToken cancellationToken)
@@ -125,6 +126,19 @@ public sealed class PlaneIntakeDispatcher(
             var headline = verified.FirstOrDefault(job => classifier.IsIssue(job.Subject, job.Body)) ?? verified[0];
             var created = await plane.CreateIntakeAsync(project.Id, Title(headline), Description(verified), cancellationToken);
             var acknowledgement = settings.AcknowledgeIntake ? Acknowledgement(headline, project, created, settings) : null;
+            // Recorded only while the team lookup is connected, so connecting it later does not notify old tickets.
+            var teamNotification = settings.NotifyTeam && team.IsConfigured && check.ClientProject is { } clientProject
+                ? new TeamNotificationDraft(
+                    first.ConversationId,
+                    clientProject.Name,
+                    clientProject.Code,
+                    project.Name,
+                    project.Id,
+                    ReplyComposer.TicketNumber(project.Identifier, created.SequenceId) is { Length: > 0 } number ? number : "(new item)",
+                    TextClip.Clip(TicketSummary(headline), 160),
+                    match.CompanyName is null ? match.Name : $"{match.Name} ({match.CompanyName})",
+                    CustomerKey.TryCreate(first.Channel, first.Sender, out var key) ? key.Value : "")
+                : null;
             await queue.MarkIntakeCreatedAsync(
                 verified.Select(job => job.MessageId).ToList(),
                 first.ConversationId,
@@ -132,6 +146,7 @@ public sealed class PlaneIntakeDispatcher(
                 created,
                 clock.GetUtcNow(),
                 acknowledgement,
+                teamNotification,
                 cancellationToken);
             logger.LogInformation(
                 "Opened Plane intake {Identifier}-{SequenceId} from {Count} {Channel} message(s) in conversation {ConversationId}",
@@ -237,6 +252,12 @@ public sealed class PlaneIntakeDispatcher(
             delay,
             error);
     }
+
+    /// <summary>What the report is about, without the "[Channel] Name:" prefix of the Plane title.</summary>
+    public static string TicketSummary(PlaneJob job) =>
+        !string.IsNullOrWhiteSpace(job.Subject)
+            ? job.Subject.Trim()
+            : FirstLine(job.Body) ?? (job.HasMedia ? "Media message" : "New message");
 
     public static string Title(PlaneJob job)
     {

@@ -54,6 +54,21 @@ app.Use(async (context, next) =>
         await next();
 });
 
+// The projects page (wwwroot/admin). Its data calls go to /api/... with the hub admin key.
+// Exact "/admin" only: routing treats "/admin" and "/admin/" as the same path, so a mapped route would loop.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.Value == "/admin")
+    {
+        context.Response.Redirect("/admin/");
+        return;
+    }
+
+    await next();
+});
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = _ => false

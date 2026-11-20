@@ -114,3 +114,47 @@ public sealed class WhatsAppSetupPoller(IWhatsAppGateway gateway, ILogger<WhatsA
         }
     }
 }
+
+/// <summary>Tells project teams about new intake items (looks the team up, then queues their messages).</summary>
+public sealed class TeamNotifyPoller(IServiceScopeFactory scopes, ILogger<TeamNotifyPoller> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await using var scope = scopes.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<TeamNotifier>().RunOnceAsync(stoppingToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(exception, "Telling project teams failed");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken);
+        }
+    }
+}
+
+/// <summary>Turns errors reported by apps into Plane intake items.</summary>
+public sealed class AppErrorPoller(IServiceScopeFactory scopes, ILogger<AppErrorPoller> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await using var scope = scopes.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<AppErrorDispatcher>().RunOnceAsync(stoppingToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(exception, "Sending app errors to Plane failed");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+        }
+    }
+}

@@ -52,6 +52,7 @@ public sealed class PlaneQueue(HubDbContext db) : IPlaneQueue
         PlaneIntakeCreated created,
         DateTimeOffset now,
         OutboundDraft? acknowledgement,
+        TeamNotificationDraft? teamNotification,
         CancellationToken cancellationToken)
     {
         var strategy = db.Database.CreateExecutionStrategy();
@@ -87,6 +88,28 @@ public sealed class PlaneQueue(HubDbContext db) : IPlaneQueue
                     Body = acknowledgement.Body,
                     Reason = acknowledgement.Reason,
                     State = OutboundState.Pending,
+                    CreatedAt = now
+                });
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            // The project team is told by the team notifier, which looks the team up with retries.
+            if (teamNotification is not null)
+            {
+                db.ChangeTracker.Clear();
+                db.TeamNotifications.Add(new TeamNotification
+                {
+                    Id = Guid.NewGuid(),
+                    ConversationId = teamNotification.ConversationId,
+                    ClientProject = TextClip.Clip(teamNotification.ClientProject, 256),
+                    ClientProjectCode = TextClip.ClipOrNull(teamNotification.ClientProjectCode, 64),
+                    PlaneProject = TextClip.Clip(teamNotification.PlaneProject, 256),
+                    PlaneProjectId = teamNotification.PlaneProjectId,
+                    TicketNumber = TextClip.Clip(teamNotification.TicketNumber, 64),
+                    Title = TextClip.Clip(teamNotification.Title, 255),
+                    Customer = TextClip.Clip(teamNotification.Customer, 255),
+                    CustomerKey = TextClip.Clip(teamNotification.CustomerKey, 320),
+                    State = TeamNotificationState.Pending,
                     CreatedAt = now
                 });
                 await db.SaveChangesAsync(cancellationToken);

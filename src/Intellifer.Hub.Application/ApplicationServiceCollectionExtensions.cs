@@ -23,6 +23,9 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<PlaneStatusWatcher>();
         services.AddScoped<OutboundDispatcher>();
         services.AddScoped<AttachmentDispatcher>();
+        services.AddScoped<TeamNotifier>();
+        services.AddScoped<AppErrorIntake>();
+        services.AddScoped<AppErrorDispatcher>();
         services.AddSingleton<OpenWaEventInterpreter>();
         services.AddScoped<IInboundIntake, InboundIntake>();
         services.AddScoped<GmailInboundSync>();

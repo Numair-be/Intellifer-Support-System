@@ -22,6 +22,153 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.AppError", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("app_id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Level")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("level");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<int>("Occurrences")
+                        .HasColumnType("integer")
+                        .HasColumnName("occurrences");
+
+                    b.Property<int>("PlaneAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("plane_attempts");
+
+                    b.Property<string>("PlaneError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("plane_error");
+
+                    b.Property<DateTimeOffset?>("PlaneNextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("plane_next_attempt_at");
+
+                    b.Property<Guid?>("PlaneProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plane_project_id");
+
+                    b.Property<int?>("PlaneSequenceId")
+                        .HasColumnType("integer")
+                        .HasColumnName("plane_sequence_id");
+
+                    b.Property<string>("PlaneState")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("plane_state");
+
+                    b.Property<Guid?>("PlaneWorkItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plane_work_item_id");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source");
+
+                    b.HasKey("Id")
+                        .HasName("pk_app_errors");
+
+                    b.HasIndex("PlaneState", "PlaneNextAttemptAt")
+                        .HasDatabaseName("ix_app_errors_queue")
+                        .HasFilter("plane_state = 'Pending'");
+
+                    b.HasIndex("AppId", "Fingerprint", "ReceivedAt")
+                        .HasDatabaseName("ix_app_errors_repeat");
+
+                    b.ToTable("app_errors", (string)null);
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.AppRegistration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key_hash");
+
+                    b.Property<string>("KeyHint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("key_hint");
+
+                    b.Property<DateTimeOffset?>("LastErrorAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_error_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Project")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("project");
+
+                    b.HasKey("Id")
+                        .HasName("pk_apps");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_apps_key_hash");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_apps_name");
+
+                    b.ToTable("apps", (string)null);
+                });
+
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ChannelHealthRecord", b =>
                 {
                     b.Property<string>("Channel")
@@ -470,6 +617,183 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.ToTable("processed_messages", (string)null);
                 });
 
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ProjectMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("WhatsApp")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("whats_app");
+
+                    b.HasKey("Id")
+                        .HasName("pk_project_members");
+
+                    b.HasIndex("ProjectId")
+                        .HasDatabaseName("ix_project_members_project_id");
+
+                    b.ToTable("project_members", (string)null);
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("ClientProject")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("client_project");
+
+                    b.Property<string>("ClientProjectCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("client_project_code");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Customer")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("customer");
+
+                    b.Property<string>("CustomerKey")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("customer_key");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("PlaneProject")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("plane_project");
+
+                    b.Property<Guid>("PlaneProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plane_project_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("TicketNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ticket_number");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_team_notifications");
+
+                    b.HasIndex("ConversationId")
+                        .HasDatabaseName("ix_team_notifications_conversation_id");
+
+                    b.HasIndex("State", "NextAttemptAt")
+                        .HasDatabaseName("ix_team_notifications_queue")
+                        .HasFilter("state = 'Pending'");
+
+                    b.ToTable("team_notifications", (string)null);
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("notes");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_team_projects");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_team_projects_name");
+
+                    b.ToTable("team_projects", (string)null);
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.AppError", b =>
+                {
+                    b.HasOne("Intellifer.Hub.Domain.Entities.AppRegistration", "App")
+                        .WithMany()
+                        .HasForeignKey("AppId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_app_errors_apps_app_id");
+
+                    b.Navigation("App");
+                });
+
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.HubMessage", b =>
                 {
                     b.HasOne("Intellifer.Hub.Domain.Entities.Conversation", "Conversation")
@@ -506,6 +830,30 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.Navigation("Conversation");
                 });
 
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ProjectMember", b =>
+                {
+                    b.HasOne("Intellifer.Hub.Domain.Entities.TeamProject", "Project")
+                        .WithMany("Members")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_project_members_team_projects_project_id");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamNotification", b =>
+                {
+                    b.HasOne("Intellifer.Hub.Domain.Entities.Conversation", "Conversation")
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_team_notifications_conversations_conversation_id");
+
+                    b.Navigation("Conversation");
+                });
+
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.Conversation", b =>
                 {
                     b.Navigation("Messages");
@@ -514,6 +862,11 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.HubMessage", b =>
                 {
                     b.Navigation("Attachments");
+                });
+
+            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamProject", b =>
+                {
+                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

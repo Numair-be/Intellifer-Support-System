@@ -70,6 +70,30 @@ public sealed class PlaneIntakeDispatcherTests
     }
 
     [Fact]
+    public async Task New_intake_records_a_team_notification_for_the_odoo_project()
+    {
+        _customers.Result = Contact("LT Form IV-D");
+        _queue.Due.Add(Job(Guid.NewGuid(), "upload failed", Now));
+
+        await Dispatcher(teamConnected: true).RunOnceAsync(CancellationToken.None);
+
+        var notice = Assert.Single(_queue.TeamNotifications);
+        Assert.Equal(("LT Form IV-D", "LT FORM IV D", "LTFORMIVD-12"), (notice.ClientProject, notice.PlaneProject, notice.TicketNumber));
+        Assert.Equal(("upload failed", "Numair (Intellifer)", "+919876543210"), (notice.Title, notice.Customer, notice.CustomerKey));
+    }
+
+    [Fact]
+    public async Task No_team_notification_while_the_team_lookup_is_not_connected()
+    {
+        _queue.Due.Add(Job(Guid.NewGuid(), "upload failed", Now));
+
+        await Dispatcher(teamConnected: false).RunOnceAsync(CancellationToken.None);
+
+        Assert.Single(_plane.Created);
+        Assert.Empty(_queue.TeamNotifications);
+    }
+
+    [Fact]
     public async Task Acknowledgement_can_be_turned_off()
     {
         _queue.Due.Add(Job(Guid.NewGuid(), "login error", Now));
@@ -375,7 +399,8 @@ public sealed class PlaneIntakeDispatcherTests
         string? projectMap = null,
         Guid? defaultProject = null,
         bool acknowledge = true,
-        int quietSeconds = 0)
+        int quietSeconds = 0,
+        bool teamConnected = false)
     {
         var options = Microsoft.Extensions.Options.Options.Create(new PlaneOptions
         {
@@ -393,6 +418,7 @@ public sealed class PlaneIntakeDispatcherTests
             _customers,
             new PlaneProjectResolver(_plane, options, clock),
             new IssueClassifier(options),
+            new FakeTeam(teamConnected),
             options,
             clock,
             NullLogger<PlaneIntakeDispatcher>.Instance);
@@ -413,6 +439,14 @@ public sealed class PlaneIntakeDispatcherTests
         0,
         workItem);
 
+    private sealed class FakeTeam(bool connected) : IProjectTeamDirectory
+    {
+        public bool IsConfigured => connected;
+
+        public Task<IReadOnlyList<TeamMember>> GetTeamAsync(IReadOnlyList<string> projectNames, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<TeamMember>>([]);
+    }
+
     private sealed class FixedClock : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => Now;
@@ -423,6 +457,7 @@ public sealed class PlaneIntakeDispatcherTests
         public List<PlaneJob> Due { get; } = [];
         public List<(IReadOnlyList<Guid> MessageIds, Guid ProjectId)> IntakeCreated { get; } = [];
         public List<OutboundDraft> Acknowledgements { get; } = [];
+        public List<TeamNotificationDraft> TeamNotifications { get; } = [];
         public List<Guid> Sent { get; } = [];
         public List<(Guid MessageId, DateTimeOffset? RetryAt)> Failed { get; } = [];
         public List<(Guid MessageId, string Reason)> Skipped { get; } = [];
@@ -437,8 +472,11 @@ public sealed class PlaneIntakeDispatcherTests
             PlaneIntakeCreated created,
             DateTimeOffset now,
             OutboundDraft? acknowledgement,
+            TeamNotificationDraft? teamNotification,
             CancellationToken cancellationToken)
         {
+            if (teamNotification is not null)
+                TeamNotifications.Add(teamNotification);
             IntakeCreated.Add((messageIds, projectId));
             if (acknowledgement is not null)
                 Acknowledgements.Add(acknowledgement);

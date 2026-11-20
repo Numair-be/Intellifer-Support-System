@@ -72,6 +72,15 @@ public sealed class PlaneOptions
 
     public long AttachmentMaxBytes => Math.Clamp(AttachmentMaxMegabytes, 1, 100) * 1024L * 1024L;
 
+    /// <summary>Tell the employees on the client project when an intake item is created for it.</summary>
+    public bool NotifyTeam { get; set; } = true;
+
+    /// <summary>
+    /// How team members are told: "whatsapp" (falls back to email when they have no phone), "email"
+    /// (falls back to WhatsApp), or "both".
+    /// </summary>
+    public string TeamChannels { get; set; } = "whatsapp";
+
     /// <summary>Signs the status replies.</summary>
     public string ReplySignature { get; set; } = "Intellifer Support";
 

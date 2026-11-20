@@ -18,6 +18,8 @@ builder.Services.AddHostedService<Intellifer.Hub.Worker.PlaneStatusPoller>();
 builder.Services.AddHostedService<Intellifer.Hub.Worker.OutboundPoller>();
 builder.Services.AddHostedService<Intellifer.Hub.Worker.AttachmentPoller>();
 builder.Services.AddHostedService<Intellifer.Hub.Worker.WhatsAppSetupPoller>();
+builder.Services.AddHostedService<Intellifer.Hub.Worker.TeamNotifyPoller>();
+builder.Services.AddHostedService<Intellifer.Hub.Worker.AppErrorPoller>();
 
 var host = builder.Build();
 await using (var scope = host.Services.CreateAsyncScope())

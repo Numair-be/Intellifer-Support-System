@@ -65,6 +65,7 @@ public interface IPlaneQueue
         PlaneIntakeCreated created,
         DateTimeOffset now,
         OutboundDraft? acknowledgement,
+        TeamNotificationDraft? teamNotification,
         CancellationToken cancellationToken);
 
     Task MarkSentAsync(Guid messageId, DateTimeOffset now, CancellationToken cancellationToken);

@@ -189,17 +189,26 @@ public sealed class GmailMailboxClient(IOptions<GmailOptions> options, ILogger<G
         return _labelId;
     }
 
-    /// <summary>Replies inside an existing thread so the customer sees it under their original email.</summary>
+    /// <summary>
+    /// Replies inside an existing thread so the customer sees it under their original email. With no
+    /// <paramref name="threadId"/> it sends a new email instead (e.g. to an employee).
+    /// </summary>
     public async Task<string?> SendReplyAsync(string threadId, string to, string subject, string body, CancellationToken cancellationToken)
     {
-        // Thread the reply properly: In-Reply-To and References point at the thread's latest message.
-        var threadRequest = Service.Users.Threads.Get(UserId, threadId);
-        threadRequest.Format = UsersResource.ThreadsResource.GetRequest.FormatEnum.Metadata;
-        threadRequest.MetadataHeaders = new Google.Apis.Util.Repeatable<string>(["Message-ID", "References"]);
-        var thread = await threadRequest.ExecuteAsync(cancellationToken);
-        var last = thread.Messages?.LastOrDefault();
-        var inReplyTo = last is null ? null : Header(last, "Message-ID");
-        var references = string.Join(' ', new[] { last is null ? null : Header(last, "References"), inReplyTo }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        string? inReplyTo = null;
+        var references = "";
+        var isReply = !string.IsNullOrWhiteSpace(threadId);
+        if (isReply)
+        {
+            // Thread the reply properly: In-Reply-To and References point at the thread's latest message.
+            var threadRequest = Service.Users.Threads.Get(UserId, threadId);
+            threadRequest.Format = UsersResource.ThreadsResource.GetRequest.FormatEnum.Metadata;
+            threadRequest.MetadataHeaders = new Google.Apis.Util.Repeatable<string>(["Message-ID", "References"]);
+            var thread = await threadRequest.ExecuteAsync(cancellationToken);
+            var last = thread.Messages?.LastOrDefault();
+            inReplyTo = last is null ? null : Header(last, "Message-ID");
+            references = string.Join(' ', new[] { last is null ? null : Header(last, "References"), inReplyTo }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        }
 
         const string Crlf = "\r\n";
         var mime = new StringBuilder();
@@ -219,9 +228,10 @@ public sealed class GmailMailboxClient(IOptions<GmailOptions> options, ILogger<G
 
         var raw = Convert.ToBase64String(Encoding.UTF8.GetBytes(mime.ToString()))
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        var sent = await Service.Users.Messages.Send(new Message { Raw = raw, ThreadId = threadId }, UserId)
+        var sent = await Service.Users.Messages.Send(new Message { Raw = raw, ThreadId = isReply ? threadId : null }, UserId)
             .ExecuteAsync(cancellationToken);
-        logger.LogInformation("Sent Gmail reply {MessageId} in thread {ThreadId}", sent.Id, threadId);
+        logger.LogInformation(isReply ? "Sent Gmail reply {MessageId} in thread {ThreadId}" : "Sent Gmail message {MessageId}{ThreadId}",
+            sent.Id, isReply ? threadId : "");
         return sent.Id;
     }
 

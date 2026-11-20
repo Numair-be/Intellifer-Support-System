@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intellifer Hub – Projects</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #2f5bea; --accent-text: #ffffff; --danger: #c4321c; --ok: #1f7a4d; --warn: #a15c00;
+    --ok-bg: #e5f4ec; --warn-bg: #fdf1dc; --bad-bg: #fbe7e3; --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1c2028; --text: #e7eaf0; --muted: #98a2b3; --line: #2c323d;
+      --accent: #6b8cff; --accent-text: #0e1220; --danger: #ff7a66; --ok: #5fd39a; --warn: #f3b553;
+      --ok-bg: #173527; --warn-bg: #3a2c12; --bad-bg: #3b1d18; --chip: #262b35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0; flex: 1; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 20px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.danger { color: var(--danger); }
+  button.link { border: none; background: none; padding: 2px 4px; color: var(--accent); }
+  input, textarea { font: inherit; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); }
+  textarea { min-height: 60px; resize: vertical; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 140px; }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .list li { padding: 9px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+  .list li:hover { background: var(--chip); }
+  .list li.active { background: var(--chip); outline: 1px solid var(--line); }
+  .list .name { font-weight: 600; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .badge.linked { background: var(--ok-bg); color: var(--ok); }
+  .badge.intake-off, .badge.unknown { background: var(--warn-bg); color: var(--warn); }
+  .badge.missing { background: var(--bad-bg); color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.actions { text-align: right; white-space: nowrap; }
+  .empty { color: var(--muted); padding: 10px 0; }
+  .notice { padding: 10px 12px; border-radius: 8px; margin: 10px 0; font-size: 13px; }
+  .notice.error { background: var(--bad-bg); color: var(--danger); }
+  .notice.info { background: var(--chip); }
+  .key { font-family: ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); padding: 8px; border-radius: 6px; word-break: break-all; margin: 8px 0; }
+  .hidden { display: none !important; }
+  .signin { max-width: 420px; margin: 60px auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Intellifer Hub · Projects</h1>
+  <button id="signOut" class="hidden">Sign out</button>
+</header>
+
+<section id="signIn" class="panel signin hidden">
+  <h2>Sign in</h2>
+  <p class="meta">Enter the hub admin key (<code>HUB_API_KEY</code> in the hub's <code>.env</code>). It is kept only for this browser tab.</p>
+  <label for="keyInput">Hub admin key</label>
+  <input id="keyInput" type="password" autocomplete="off">
+  <div class="row" style="margin-top:12px"><button id="keyButton" class="primary">Sign in</button></div>
+  <div id="signInError" class="notice error hidden"></div>
+</section>
+
+<main id="app" class="hidden">
+  <aside class="panel">
+    <div class="row" style="margin-bottom:10px">
+      <h2 class="grow" style="margin:0">Projects</h2>
+      <button id="newProject" class="primary">New</button>
+    </div>
+    <ul id="projectList" class="list"></ul>
+    <div id="projectListEmpty" class="empty hidden">No projects yet. Create one with the same name as the Plane project.</div>
+  </aside>
+
+  <section class="panel">
+    <div id="placeholder" class="empty">Select a project, or create a new one.</div>
+    <div id="error" class="notice error hidden"></div>
+
+    <form id="projectForm" class="hidden">
+      <h2 id="formTitle">Project</h2>
+      <label for="projectName">Name (exactly as the project is called in Plane)</label>
+      <input id="projectName" maxlength="256" required>
+      <div id="planeStatus" class="meta" style="margin-top:6px"></div>
+      <label for="projectNotes">Notes (optional)</label>
+      <textarea id="projectNotes" maxlength="2000"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" id="cancelProject">Cancel</button>
+        <span class="grow"></span>
+        <button type="button" id="deleteProject" class="danger hidden">Delete project</button>
+      </div>
+    </form>
+
+    <div id="details" class="hidden">
+      <h3>Employees</h3>
+      <p class="meta">They get a WhatsApp message when an intake item is created for this project.</p>
+      <table>
+        <thead><tr><th>Name</th><th>WhatsApp</th><th></th></tr></thead>
+        <tbody id="members"></tbody>
+      </table>
+      <div id="membersEmpty" class="empty hidden">No employees yet.</div>
+      <form id="memberForm" class="row" style="margin-top:10px">
+        <input id="memberName" class="grow" placeholder="Employee name" maxlength="200" required>
+        <input id="memberPhone" class="grow" placeholder="WhatsApp, e.g. +91 98765 43210" maxlength="32" required>
+        <button type="submit" class="primary" id="memberSubmit">Add</button>
+        <button type="button" id="memberCancel" class="hidden">Cancel</button>
+      </form>
+
+      <h3>Connected apps</h3>
+      <p class="meta">Apps that report errors to the hub (<code>POST /api/errors</code>); their errors open intake items in this project.</p>
+      <table>
+        <thead><tr><th>App</th><th>Key</th><th>Last error</th><th></th></tr></thead>
+        <tbody id="apps"></tbody>
+      </table>
+      <div id="appsEmpty" class="empty hidden">No apps connected.</div>
+      <form id="appForm" class="row" style="margin-top:10px">
+        <input id="appName" class="grow" placeholder="App name, e.g. crm-backend" maxlength="100" pattern="[A-Za-z0-9._-]{2,100}" required>
+        <button type="submit" class="primary">Connect app</button>
+      </form>
+      <div id="keyBox" class="notice info hidden">
+        <strong id="keyTitle">App key</strong>
+        <div class="meta">Shown only once. Put it in the app's settings; the app sends it as the <code>X-App-Key</code> header.</div>
+        <div id="keyValue" class="key"></div>
+        <div class="row"><button id="copyKey" type="button">Copy</button><button id="closeKey" type="button">Done</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const storage = {
+    get() { try { return sessionStorage.getItem("hubKey") || ""; } catch { return ""; } },
+    set(value) { try { sessionStorage.setItem("hubKey", value); } catch {} },
+    clear() { try { sessionStorage.removeItem("hubKey"); } catch {} }
+  };
+  let key = storage.get();
+  let projects = [];
+  let current = null;       // project being viewed (detail), or null for "new"
+  let editingMember = null; // member id being edited
+
+  async function api(path, options = {}) {
+    const response = await fetch("/api" + path, {
+      ...options,
+      headers: { "X-Api-Key": key, ...(options.body ? { "Content-Type": "application/json" } : {}) }
+    });
+    if (response.status === 401) { signOut("That key was not accepted."); throw new Error("unauthorized"); }
+    if (!response.ok) {
+      let message = response.status + " " + response.statusText;
+      try { const body = await response.json(); message = body.error || message; } catch {}
+      throw new Error(message);
+    }
+    return response.status === 204 ? null : response.json();
+  }
+
+  function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+  function showError(message) { $("error").textContent = message || ""; show("error", !!message); }
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    Object.assign(node, props);
+    for (const child of children) node.append(child);
+    return node;
+  }
+  function when(value) { return value ? new Date(value).toLocaleString() : "never"; }
+  function badge(plane) {
+    const labels = { linked: "Plane: linked", "intake-off": "Plane: intake off", missing: "Plane: not found", unknown: "Plane: ?" };
+    return el("span", { className: "badge " + plane.status, textContent: labels[plane.status] || plane.status, title: plane.detail });
+  }
+
+  // ---------------------------------------------------------------- sign in
+  function signOut(message) {
+    key = ""; storage.clear();
+    show("app", false); show("signOut", false); show("signIn", true);
+    $("signInError").textContent = message || ""; show("signInError", !!message);
+  }
+  async function signIn() {
+    key = $("keyInput").value.trim();
+    if (!key) return;
+    try { await loadProjects(); storage.set(key); show("signIn", false); show("app", true); show("signOut", true); $("keyInput").value = ""; }
+    catch (e) { if (e.message !== "unauthorized") { $("signInError").textContent = e.message; show("signInError", true); } }
+  }
+  $("keyButton").onclick = signIn;
+  $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
+  $("signOut").onclick = () => signOut();
+
+  // ---------------------------------------------------------------- project list
+  async function loadProjects() {
+    projects = await api("/projects");
+    const list = $("projectList");
+    list.replaceChildren();
+    for (const project of projects) {
+      const item = el("li", { className: current && current.id === project.id ? "active" : "" }, [
+        el("span", { className: "name", textContent: project.name }),
+        el("span", { className: "meta" }, [
+          `${project.memberCount} employee${project.memberCount === 1 ? "" : "s"} · ${project.appCount} app${project.appCount === 1 ? "" : "s"} `,
+          badge(project.plane)
+        ])
+      ]);
+      item.onclick = () => openProject(project.id);
+      list.append(item);
+    }
+    show("projectListEmpty", projects.length === 0);
+  }
+
+  // ---------------------------------------------------------------- project detail
+  async function openProject(id) {
+    showError("");
+    try {
+      current = await api("/projects/" + id);
+    } catch (e) { showError(e.message); return; }
+    $("formTitle").textContent = current.name;
+    $("projectName").value = current.name;
+    $("projectNotes").value = current.notes || "";
+    $("planeStatus").replaceChildren(badge(current.plane), " " + current.plane.detail);
+    show("placeholder", false); show("projectForm", true); show("deleteProject", true); show("details", true);
+    show("keyBox", false);
+    resetMemberForm();
+    renderMembers(); renderApps();
+    await loadProjects();
+  }
+
+  function newProject() {
+    current = null; showError("");
+    $("formTitle").textContent = "New project";
+    $("projectName").value = ""; $("projectNotes").value = "";
+    $("planeStatus").textContent = "Use the exact name of the project in Plane, so tickets and employees match.";
+    show("placeholder", false); show("projectForm", true); show("deleteProject", false); show("details", false);
+    $("projectName").focus();
+    loadProjects();
+  }
+  $("newProject").onclick = newProject;
+  $("cancelProject").onclick = () => current ? openProject(current.id) : (show("projectForm", false), show("placeholder", true));
+
+  $("projectForm").onsubmit = async (e) => {
+    e.preventDefault(); showError("");
+    const body = JSON.stringify({ name: $("projectName").value, notes: $("projectNotes").value });
+    try {
+      if (current) { await api("/projects/" + current.id, { method: "PUT", body }); await openProject(current.id); }
+      else { const created = await api("/projects", { method: "POST", body }); await openProject(created.id); }
+    } catch (err) { showError(err.message); }
+  };
+
+  $("deleteProject").onclick = async () => {
+    if (!current) return;
+    if (!confirm(`Delete project "${current.name}" and its employee list?\nConnected apps keep working but should be moved to another project.`)) return;
+    try { await api("/projects/" + current.id, { method: "DELETE" }); current = null; show("projectForm", false); show("details", false); show("placeholder", true); await loadProjects(); }
+    catch (err) { showError(err.message); }
+  };
+
+  // ---------------------------------------------------------------- employees
+  function renderMembers() {
+    const body = $("members");
+    body.replaceChildren();
+    for (const member of current.members) {
+      const edit = el("button", { className: "link", textContent: "Edit", type: "button" });
+      edit.onclick = () => {
+        editingMember = member.id;
+        $("memberName").value = member.name; $("memberPhone").value = member.whatsApp;
+        $("memberSubmit").textContent = "Save"; show("memberCancel", true); $("memberName").focus();
+      };
+      const remove = el("button", { className: "link danger", textContent: "Remove", type: "button" });
+      remove.onclick = async () => {
+        if (!confirm(`Remove ${member.name} from ${current.name}?`)) return;
+        try { await api(`/projects/${current.id}/members/${member.id}`, { method: "DELETE" }); await openProject(current.id); }
+        catch (err) { showError(err.message); }
+      };
+      body.append(el("tr", {}, [
+        el("td", { textContent: member.name }),
+        el("td", { textContent: member.whatsApp }),
+        el("td", { className: "actions" }, [edit, remove])
+      ]));
+    }
+    show("membersEmpty", current.members.length === 0);
+  }
+
+  function resetMemberForm() {
+    editingMember = null;
+    $("memberName").value = ""; $("memberPhone").value = "";
+    $("memberSubmit").textContent = "Add"; show("memberCancel", false);
+  }
+  $("memberCancel").onclick = resetMemberForm;
+
+  $("memberForm").onsubmit = async (e) => {
+    e.preventDefault(); showError("");
+    const body = JSON.stringify({ name: $("memberName").value, whatsApp: $("memberPhone").value });
+    try {
+      if (editingMember) await api(`/projects/${current.id}/members/${editingMember}`, { method: "PUT", body });
+      else await api(`/projects/${current.id}/members`, { method: "POST", body });
+      await openProject(current.id);
+    } catch (err) { showError(err.message); }
+  };
+
+  // ---------------------------------------------------------------- connected apps
+  function renderApps() {
+    const body = $("apps");
+    body.replaceChildren();
+    for (const app of current.apps) {
+      const toggle = el("button", { className: "link", type: "button", textContent: app.active ? "Turn off" : "Turn on" });
+      toggle.onclick = () => appCall(`/apps/${app.id}`, { method: "PATCH", body: JSON.stringify({ active: !app.active }) });
+      const rotate = el("button", { className: "link", type: "button", textContent: "New key" });
+      rotate.onclick = async () => {
+        if (!confirm(`Give ${app.name} a new key? The old key stops working immediately.`)) return;
+        try { const result = await api(`/apps/${app.id}/key`, { method: "POST" }); showKey(app.name, result.key); await openProject(current.id); showKey(app.name, result.key); }
+        catch (err) { showError(err.message); }
+      };
+      const remove = el("button", { className: "link danger", type: "button", textContent: "Remove" });
+      remove.onclick = () => confirm(`Remove ${app.name}? Its key stops working and its stored errors are deleted.`)
+        && appCall(`/apps/${app.id}`, { method: "DELETE" });
+      body.append(el("tr", {}, [
+        el("td", {}, [el("span", { textContent: app.name }), " ", app.active ? "" : el("span", { className: "badge", textContent: "off" })]),
+        el("td", { className: "meta", textContent: app.keyHint }),
+        el("td", { className: "meta", textContent: when(app.lastErrorAt) }),
+        el("td", { className: "actions" }, [toggle, rotate, remove])
+      ]));
+    }
+    show("appsEmpty", current.apps.length === 0);
+  }
+
+  async function appCall(path, options) {
+    showError("");
+    try { await api(path, options); await openProject(current.id); } catch (err) { showError(err.message); }
+  }
+
+  $("appForm").onsubmit = async (e) => {
+    e.preventDefault(); showError("");
+    const name = $("appName").value.trim();
+    try {
+      const result = await api("/apps", { method: "POST", body: JSON.stringify({ name, project: current.name }) });
+      $("appName").value = "";
+      await openProject(current.id);
+      showKey(name, result.key);
+    } catch (err) { showError(err.message); }
+  };
+
+  function showKey(name, value) {
+    $("keyTitle").textContent = `Key for ${name}`;
+    $("keyValue").textContent = value;
+    show("keyBox", true);
+  }
+  $("copyKey").onclick = async () => {
+    try { await navigator.clipboard.writeText($("keyValue").textContent); $("copyKey").textContent = "Copied"; setTimeout(() => $("copyKey").textContent = "Copy", 1500); }
+    catch { window.getSelection().selectAllChildren($("keyValue")); }
+  };
+  $("closeKey").onclick = () => { $("keyValue").textContent = ""; show("keyBox", false); };
+
+  // ---------------------------------------------------------------- start
+  if (key) { loadProjects().then(() => { show("app", true); show("signOut", true); }).catch(() => {}); }
+  else signOut();
+})();
+</script>
+</body>
+</html>

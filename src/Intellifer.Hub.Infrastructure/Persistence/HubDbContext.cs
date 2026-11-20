@@ -20,6 +20,16 @@ public sealed class HubDbContext(DbContextOptions<HubDbContext> options) : DbCon
 
     public DbSet<MessageAttachment> Attachments => Set<MessageAttachment>();
 
+    public DbSet<TeamNotification> TeamNotifications => Set<TeamNotification>();
+
+    public DbSet<AppRegistration> Apps => Set<AppRegistration>();
+
+    public DbSet<AppError> AppErrors => Set<AppError>();
+
+    public DbSet<TeamProject> TeamProjects => Set<TeamProject>();
+
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+
     public static void Configure(DbContextOptionsBuilder options, string connectionString)
     {
         if (!connectionString.Contains("GSS Encryption Mode", StringComparison.OrdinalIgnoreCase))
@@ -88,6 +98,86 @@ public sealed class HubDbContext(DbContextOptions<HubDbContext> options) : DbCon
             entity.HasKey(state => state.Mailbox);
             entity.Property(state => state.Mailbox).HasMaxLength(320);
             entity.Property(state => state.HistoryId).HasMaxLength(32);
+        });
+
+        modelBuilder.Entity<TeamProject>(entity =>
+        {
+            entity.ToTable("team_projects");
+            entity.HasKey(project => project.Id);
+            entity.Property(project => project.Id).ValueGeneratedNever();
+            entity.Property(project => project.Name).HasMaxLength(256);
+            entity.Property(project => project.Notes).HasMaxLength(2000);
+            entity.HasIndex(project => project.Name).IsUnique().HasDatabaseName("ux_team_projects_name");
+        });
+
+        modelBuilder.Entity<ProjectMember>(entity =>
+        {
+            entity.ToTable("project_members");
+            entity.HasKey(member => member.Id);
+            entity.Property(member => member.Id).ValueGeneratedNever();
+            entity.Property(member => member.Name).HasMaxLength(200);
+            entity.Property(member => member.WhatsApp).HasMaxLength(32);
+            entity.HasOne(member => member.Project)
+                .WithMany(project => project.Members)
+                .HasForeignKey(member => member.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AppRegistration>(entity =>
+        {
+            entity.ToTable("apps");
+            entity.HasKey(app => app.Id);
+            entity.Property(app => app.Id).ValueGeneratedNever();
+            entity.Property(app => app.Name).HasMaxLength(100);
+            entity.Property(app => app.Project).HasMaxLength(256);
+            entity.Property(app => app.KeyHash).HasMaxLength(64);
+            entity.Property(app => app.KeyHint).HasMaxLength(32);
+            entity.HasIndex(app => app.Name).IsUnique().HasDatabaseName("ux_apps_name");
+            entity.HasIndex(app => app.KeyHash).IsUnique().HasDatabaseName("ux_apps_key_hash");
+        });
+
+        modelBuilder.Entity<AppError>(entity =>
+        {
+            entity.ToTable("app_errors");
+            entity.HasKey(error => error.Id);
+            entity.Property(error => error.Id).ValueGeneratedNever();
+            entity.Property(error => error.Source).HasMaxLength(256);
+            entity.Property(error => error.Level).HasMaxLength(32);
+            entity.Property(error => error.Fingerprint).HasMaxLength(64);
+            entity.Property(error => error.PlaneState).HasConversion<string>().HasMaxLength(16);
+            entity.Property(error => error.PlaneError).HasMaxLength(1000);
+            entity.HasOne(error => error.App)
+                .WithMany()
+                .HasForeignKey(error => error.AppId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(error => new { error.AppId, error.Fingerprint, error.ReceivedAt })
+                .HasDatabaseName("ix_app_errors_repeat");
+            entity.HasIndex(error => new { error.PlaneState, error.PlaneNextAttemptAt })
+                .HasDatabaseName("ix_app_errors_queue")
+                .HasFilter("plane_state = 'Pending'");
+        });
+
+        modelBuilder.Entity<TeamNotification>(entity =>
+        {
+            entity.ToTable("team_notifications");
+            entity.HasKey(notice => notice.Id);
+            entity.Property(notice => notice.Id).ValueGeneratedNever();
+            entity.Property(notice => notice.State).HasConversion<string>().HasMaxLength(16);
+            entity.Property(notice => notice.ClientProject).HasMaxLength(256);
+            entity.Property(notice => notice.ClientProjectCode).HasMaxLength(64);
+            entity.Property(notice => notice.PlaneProject).HasMaxLength(256);
+            entity.Property(notice => notice.TicketNumber).HasMaxLength(64);
+            entity.Property(notice => notice.Title).HasMaxLength(255);
+            entity.Property(notice => notice.Customer).HasMaxLength(255);
+            entity.Property(notice => notice.CustomerKey).HasMaxLength(320);
+            entity.Property(notice => notice.Note).HasMaxLength(1000);
+            entity.HasOne(notice => notice.Conversation)
+                .WithMany()
+                .HasForeignKey(notice => notice.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(notice => new { notice.State, notice.NextAttemptAt })
+                .HasDatabaseName("ix_team_notifications_queue")
+                .HasFilter("state = 'Pending'");
         });
 
         modelBuilder.Entity<MessageAttachment>(entity =>

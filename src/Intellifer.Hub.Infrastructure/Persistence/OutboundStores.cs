@@ -144,3 +144,85 @@ public sealed class OutboundQueue(HubDbContext db) : IOutboundQueue
                 cancellationToken);
     }
 }
+
+public sealed class TeamNotificationStore(HubDbContext db) : ITeamNotificationStore
+{
+    public async Task<IReadOnlyList<TeamNotificationJob>> GetDueAsync(int take, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return await db.TeamNotifications
+            .Where(notice => notice.State == TeamNotificationState.Pending
+                && (notice.NextAttemptAt == null || notice.NextAttemptAt <= now))
+            .OrderBy(notice => notice.CreatedAt)
+            .Take(take)
+            .Select(notice => new TeamNotificationJob(
+                notice.Id,
+                notice.ConversationId,
+                notice.ClientProject,
+                notice.ClientProjectCode,
+                notice.PlaneProject,
+                notice.PlaneProjectId,
+                notice.TicketNumber,
+                notice.Title,
+                notice.Customer,
+                notice.CustomerKey,
+                notice.Attempts))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task CompleteAsync(
+        Guid id,
+        IReadOnlyList<OutboundDraft> messages,
+        string? note,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var strategy = db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            foreach (var message in messages)
+            {
+                db.OutboundMessages.Add(new OutboundMessage
+                {
+                    Id = Guid.NewGuid(),
+                    ConversationId = message.ConversationId,
+                    Channel = message.Channel,
+                    Recipient = message.Recipient,
+                    ThreadKey = message.ThreadKey,
+                    Subject = message.Subject,
+                    Body = message.Body,
+                    Reason = message.Reason,
+                    State = OutboundState.Pending,
+                    CreatedAt = now
+                });
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            var text = TextClip.ClipOrNull(note, 1_000);
+            await db.TeamNotifications
+                .Where(notice => notice.Id == id)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(notice => notice.State, TeamNotificationState.Done)
+                    .SetProperty(notice => notice.CompletedAt, now)
+                    .SetProperty(notice => notice.Note, text)
+                    .SetProperty(notice => notice.NextAttemptAt, (DateTimeOffset?)null),
+                    cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        });
+    }
+
+    public async Task MarkFailedAsync(Guid id, string error, DateTimeOffset? retryAt, CancellationToken cancellationToken)
+    {
+        var state = retryAt is null ? TeamNotificationState.Failed : TeamNotificationState.Pending;
+        await db.TeamNotifications
+            .Where(notice => notice.Id == id)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(notice => notice.State, state)
+                .SetProperty(notice => notice.Attempts, notice => notice.Attempts + 1)
+                .SetProperty(notice => notice.Note, error)
+                .SetProperty(notice => notice.NextAttemptAt, retryAt),
+                cancellationToken);
+    }
+}
