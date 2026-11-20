@@ -48,13 +48,23 @@ Run `./deploy.sh` again after copying new code: it keeps the existing secrets, p
 
 Run `deploy.sh` and the `docker compose` commands **inside WSL**. The project folder `C:\IntelliferSupport` is `/mnt/c/IntelliferSupport` there. Under WSL, `deploy.sh` also checks the ports Windows programs already use, because WSL forwards the hub's ports to Windows' `localhost`.
 
-Windows does not start WSL at boot. To bring the hub back after a reboot, register the startup task once, in PowerShell **as Administrator**, signed in as the user that owns the WSL distribution:
+Windows does not start WSL by itself, and WSL stops when nothing is attached to it. Pick one way to keep WSL and Docker running; Docker then restarts the hub's containers (`restart: unless-stopped`):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File C:\IntelliferSupport\windows\install-autostart.ps1
-```
+- **At sign-in (no admin, no password stored).** Run once, in normal PowerShell, as the user that owns the WSL distribution:
 
-It starts WSL and Docker at boot, before anyone signs in; Docker then restarts the hub's containers (`restart: unless-stopped`).
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File C:\IntelliferSupport\windows\install-signin-start.ps1 -StartNow
+  ```
+
+  It adds a hidden launcher to that user's Startup folder. The hub runs while that user is signed in: locking the screen is fine, signing out stops it until the next sign-in. Remove it with `-Uninstall`.
+
+- **At boot, before anyone signs in (admin once, stores that user's password).** In PowerShell **as Administrator**:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File C:\IntelliferSupport\windows\install-autostart.ps1
+  ```
+
+Use one or the other, not both.
 
 | To | Run inside WSL, in `/mnt/c/IntelliferSupport` | After a reboot |
 | --- | --- | --- |
