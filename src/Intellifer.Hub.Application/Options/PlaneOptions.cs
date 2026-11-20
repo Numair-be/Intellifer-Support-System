@@ -6,7 +6,7 @@ public sealed class PlaneOptions
 
     public const string DefaultKeywords =
         "bug,bugs,error,errors,issue,issues,problem,not working,doesn't work,does not work,isn't working," +
-        "is not working,broken,crash,crashes,crashed,crashing,exception,failed,failing,failure,glitch,unable to";
+        "is not working,broken,crash,crashes,crashed,crashing,exception,failed,failing,failure,glitch,unable to,fix";
 
     /// <summary>Base URL of the self-hosted Plane, e.g. https://plane.example.com. The API lives under /api/v1.</summary>
     public string? Url { get; set; }

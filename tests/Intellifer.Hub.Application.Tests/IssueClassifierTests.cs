@@ -14,6 +14,8 @@ public sealed class IssueClassifierTests
     [InlineData(null, "it doesn’t work on my phone")]
     [InlineData("Found a bug", "")]
     [InlineData(null, "Upload failed again")]
+    [InlineData(null, "Fix this new one")]
+    [InlineData("Please fix", "the export page")]
     public void Bug_and_error_reports_are_flagged(string? subject, string? body)
     {
         Assert.True(_classifier.IsIssue(subject, body));
@@ -24,6 +26,8 @@ public sealed class IssueClassifierTests
     [InlineData(null, "Thanks, all good now!")]
     [InlineData(null, "Watching a terrorism documentary")] // "error" inside another word
     [InlineData(null, "Ladybugs in the garden")]
+    [InlineData(null, "It is fixed now, thanks")] // "fixed" is not "fix"
+    [InlineData(null, "We need a prefix for the invoice numbers")]
     public void Ordinary_messages_are_not_flagged(string? subject, string? body)
     {
         Assert.False(_classifier.IsIssue(subject, body));

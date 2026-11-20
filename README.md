@@ -134,7 +134,7 @@ All in `.env` (documented in `.env.example`). The ones most likely to change:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `PLANE_INTAKE_KEYWORDS` | bug, error, not working, crash, failed, … | Words that make a burst of messages a bug report. |
+| `PLANE_INTAKE_KEYWORDS` | bug, error, not working, crash, failed, fix, … | Words that make a burst of messages a bug report. |
 | `PLANE_WHATSAPP_QUIET_SECONDS` | 120 | Wait this long after the last WhatsApp message before judging the burst. |
 | `PLANE_EMAIL_QUIET_SECONDS` | 0 | Same for email. |
 | `PLANE_NEW_TICKET_AFTER_IDLE_HOURS` | 24 | An open ticket idle this long gets a new ticket for the next report. |
