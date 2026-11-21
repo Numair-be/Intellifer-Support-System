@@ -143,7 +143,7 @@ public static partial class HubEndpoints
                 return Results.Ok(new { status = "logged out", next = "Link again with POST /api/whatsapp/link." });
             }));
 
-        // Projects page: projects (same names as in Plane), their employees, and the apps connected to them.
+        // Projects page: projects (same names as in Plane) and the apps connected to them. Employees come from Odoo.
         api.MapGet("/projects", async (IProjectAdmin projects, IAppRegistry apps, PlaneProjectResolver plane, CancellationToken cancellationToken) =>
         {
             var list = await projects.ListAsync(cancellationToken);
@@ -154,7 +154,6 @@ public static partial class HubEndpoints
                 project.Id,
                 project.Name,
                 project.Notes,
-                project.MemberCount,
                 AppCount = allApps.Count(app => SameProject(app.Project, project.Name)),
                 Plane = PlaneLink(project.Name, planeProjects),
                 project.UpdatedAt
@@ -174,7 +173,6 @@ public static partial class HubEndpoints
                 project.Notes,
                 project.CreatedAt,
                 project.UpdatedAt,
-                project.Members,
                 Apps = connected,
                 Plane = PlaneLink(project.Name, await TryPlaneProjectsAsync(plane, cancellationToken))
             });
@@ -205,28 +203,28 @@ public static partial class HubEndpoints
         api.MapDelete("/projects/{id:guid}", async (Guid id, IProjectAdmin projects, CancellationToken cancellationToken) =>
             await projects.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
-        api.MapPost("/projects/{id:guid}/members", async (
-            Guid id, MemberRequest request, IProjectAdmin projects, ISenderNormalizer normalizer, CancellationToken cancellationToken) =>
+        // Who would be told about a new intake item in this project: GET /api/team?project=Support Test
+        api.MapGet("/team", async (string? project, IProjectTeamDirectory team, CancellationToken cancellationToken) =>
         {
-            if (Validate(request, normalizer, out var whatsApp) is { } invalid)
-                return invalid;
-            return await projects.AddMemberAsync(id, request.Name!, whatsApp, cancellationToken) is { } member
-                ? Results.Created($"/api/projects/{id}/members/{member.Id}", member)
-                : Results.NotFound();
+            if (string.IsNullOrWhiteSpace(project))
+                return Results.BadRequest(new { error = "Add ?project=<project name>." });
+            try
+            {
+                var members = await team.GetTeamAsync([project], cancellationToken);
+                return Results.Ok(new
+                {
+                    project,
+                    members,
+                    note = members.Count == 0
+                        ? "Nobody to notify: assign employees with a work mobile, phone or email to the project in Odoo."
+                        : null
+                });
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                return Results.Json(new { error = exception.Message }, statusCode: StatusCodes.Status502BadGateway);
+            }
         });
-
-        api.MapPut("/projects/{id:guid}/members/{memberId:guid}", async (
-            Guid id, Guid memberId, MemberRequest request, IProjectAdmin projects, ISenderNormalizer normalizer, CancellationToken cancellationToken) =>
-        {
-            if (Validate(request, normalizer, out var whatsApp) is { } invalid)
-                return invalid;
-            return await projects.UpdateMemberAsync(id, memberId, request.Name!, whatsApp, cancellationToken) is { } member
-                ? Results.Ok(member)
-                : Results.NotFound();
-        });
-
-        api.MapDelete("/projects/{id:guid}/members/{memberId:guid}", async (Guid id, Guid memberId, IProjectAdmin projects, CancellationToken cancellationToken) =>
-            await projects.DeleteMemberAsync(id, memberId, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
         // Apps that may report errors, and the project each belongs to (until this moves to Odoo).
         api.MapGet("/apps", async (IAppRegistry apps, CancellationToken cancellationToken) =>
@@ -391,25 +389,6 @@ public static partial class HubEndpoints
     }
 
     public sealed record ProjectRequest(string? Name, string? Notes);
-
-    public sealed record MemberRequest(string? Name, string? WhatsApp);
-
-    private static IResult? Validate(MemberRequest request, ISenderNormalizer normalizer, out string whatsApp)
-    {
-        whatsApp = "";
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return Results.BadRequest(new { error = "Employee name is required." });
-        if (string.IsNullOrWhiteSpace(request.WhatsApp))
-            return Results.BadRequest(new { error = "WhatsApp number is required." });
-
-        // Any format: +91 98765 43210, 098765-43210, 9876543210 (default region from DEFAULT_PHONE_REGION).
-        var normalized = normalizer.Normalize(ChannelType.WhatsApp, request.WhatsApp);
-        var digits = normalized.Count(char.IsDigit);
-        if (!normalized.StartsWith('+') || digits is < 8 or > 15)
-            return Results.BadRequest(new { error = $"'{request.WhatsApp}' is not a phone number. Use the full number, e.g. +91 98765 43210." });
-        whatsApp = normalized;
-        return null;
-    }
 
     private static bool SameProject(string a, string b) =>
         PlaneProjectResolver.Normalize(a) == PlaneProjectResolver.Normalize(b);

@@ -28,7 +28,6 @@ public sealed class HubDbContext(DbContextOptions<HubDbContext> options) : DbCon
 
     public DbSet<TeamProject> TeamProjects => Set<TeamProject>();
 
-    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
 
     public static void Configure(DbContextOptionsBuilder options, string connectionString)
     {
@@ -108,19 +107,6 @@ public sealed class HubDbContext(DbContextOptions<HubDbContext> options) : DbCon
             entity.Property(project => project.Name).HasMaxLength(256);
             entity.Property(project => project.Notes).HasMaxLength(2000);
             entity.HasIndex(project => project.Name).IsUnique().HasDatabaseName("ux_team_projects_name");
-        });
-
-        modelBuilder.Entity<ProjectMember>(entity =>
-        {
-            entity.ToTable("project_members");
-            entity.HasKey(member => member.Id);
-            entity.Property(member => member.Id).ValueGeneratedNever();
-            entity.Property(member => member.Name).HasMaxLength(200);
-            entity.Property(member => member.WhatsApp).HasMaxLength(32);
-            entity.HasOne(member => member.Project)
-                .WithMany(project => project.Members)
-                .HasForeignKey(member => member.ProjectId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AppRegistration>(entity =>

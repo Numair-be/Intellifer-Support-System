@@ -1,10 +1,8 @@
 namespace Intellifer.Hub.Application;
 
-public sealed record ProjectSummary(Guid Id, string Name, string? Notes, int MemberCount, DateTimeOffset UpdatedAt);
+public sealed record ProjectSummary(Guid Id, string Name, string? Notes, DateTimeOffset UpdatedAt);
 
-public sealed record ProjectMemberInfo(Guid Id, string Name, string WhatsApp);
-
-public sealed record ProjectDetail(Guid Id, string Name, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<ProjectMemberInfo> Members);
+public sealed record ProjectDetail(Guid Id, string Name, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 public enum ProjectSaveResult
 {
@@ -13,7 +11,8 @@ public enum ProjectSaveResult
     NameTaken
 }
 
-/// <summary>Projects, their employees, for the hub's project page.</summary>
+/// <summary>Projects for the hub's project page: the Plane project name that connected apps report errors to.
+/// Employees come from Odoo, not from here.</summary>
 public interface IProjectAdmin
 {
     Task<IReadOnlyList<ProjectSummary>> ListAsync(CancellationToken cancellationToken);
@@ -26,11 +25,4 @@ public interface IProjectAdmin
     Task<ProjectSaveResult> UpdateAsync(Guid id, string name, string? notes, CancellationToken cancellationToken);
 
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
-
-    /// <summary>Null when the project does not exist.</summary>
-    Task<ProjectMemberInfo?> AddMemberAsync(Guid projectId, string name, string whatsApp, CancellationToken cancellationToken);
-
-    Task<ProjectMemberInfo?> UpdateMemberAsync(Guid projectId, Guid memberId, string name, string whatsApp, CancellationToken cancellationToken);
-
-    Task<bool> DeleteMemberAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken);
 }

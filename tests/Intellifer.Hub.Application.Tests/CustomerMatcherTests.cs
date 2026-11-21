@@ -69,6 +69,17 @@ public sealed class CustomerMatcherTests
         Assert.Equal("PLANE", match.Projects[0].Code);
     }
 
+    [Fact]
+    public void One_contact_on_several_odoo_projects_keeps_them_all()
+    {
+        var key = Key(ChannelType.Email, "asha@acme.com");
+        var contact = new ContactCandidate(5, "Asha", "Acme", [new ClientProject("Support Test"), new ClientProject("KSB")], ["asha@acme.com"], []);
+
+        var match = _matcher.Pick(key, [contact])!;
+
+        Assert.Equal(["Support Test", "KSB"], match.Projects.Select(project => project.Name));
+    }
+
     [Theory]
     [InlineData(ChannelType.WhatsApp, "107589064999080@lid")]
     [InlineData(ChannelType.WhatsApp, "1203630@g.us")]
@@ -91,5 +102,5 @@ public sealed class CustomerMatcherTests
         string[]? phones = null,
         ClientProject? project = null,
         string? company = null) =>
-        new(id, name, company, project, emails ?? [], phones ?? []);
+        new(id, name, company, project is null ? [] : [project], emails ?? [], phones ?? []);
 }

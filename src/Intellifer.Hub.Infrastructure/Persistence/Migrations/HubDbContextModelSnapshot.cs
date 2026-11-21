@@ -617,41 +617,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.ToTable("processed_messages", (string)null);
                 });
 
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ProjectMember", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("project_id");
-
-                    b.Property<string>("WhatsApp")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("whats_app");
-
-                    b.HasKey("Id")
-                        .HasName("pk_project_members");
-
-                    b.HasIndex("ProjectId")
-                        .HasDatabaseName("ix_project_members_project_id");
-
-                    b.ToTable("project_members", (string)null);
-                });
-
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamNotification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -830,18 +795,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.Navigation("Conversation");
                 });
 
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ProjectMember", b =>
-                {
-                    b.HasOne("Intellifer.Hub.Domain.Entities.TeamProject", "Project")
-                        .WithMany("Members")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_project_members_team_projects_project_id");
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamNotification", b =>
                 {
                     b.HasOne("Intellifer.Hub.Domain.Entities.Conversation", "Conversation")
@@ -862,11 +815,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.HubMessage", b =>
                 {
                     b.Navigation("Attachments");
-                });
-
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamProject", b =>
-                {
-                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

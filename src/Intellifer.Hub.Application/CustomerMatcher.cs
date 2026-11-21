@@ -43,7 +43,7 @@ public sealed record ContactCandidate(
     int Id,
     string Name,
     string? CompanyName,
-    ClientProject? Project,
+    IReadOnlyList<ClientProject> Projects,
     IReadOnlyList<string> Emails,
     IReadOnlyList<string> Phones);
 
@@ -61,8 +61,7 @@ public sealed partial class CustomerMatcher(ISenderNormalizer normalizer)
 
         var first = matches[0];
         var projects = matches
-            .Select(candidate => candidate.Project)
-            .OfType<ClientProject>()
+            .SelectMany(candidate => candidate.Projects)
             .Where(project => !string.IsNullOrWhiteSpace(project.Name))
             .DistinctBy(project => project.Name.Trim().ToLowerInvariant())
             .ToList();

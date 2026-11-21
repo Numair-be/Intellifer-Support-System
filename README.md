@@ -115,10 +115,13 @@ The worker polls the mailbox every 45 seconds, labels stored mail `Support`, and
 
 `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY` in `.env`. The hub uses Odoo's standard `/jsonrpc` endpoint and only reads:
 
-- `client.contact` — name, company, email, alternate email, phone, project;
-- `client.project` — name and code.
+- `client.contact` — name, company, email, alternate email, phone, projects (`project_ids`);
+- `project.project` — name and assigned employees;
+- `hr.employee` — name and **work** mobile, phone and email (private fields are never read).
 
 Check a sender: `curl -H "X-Api-Key: $HUB_API_KEY" "API/api/customers/lookup?channel=Email&sender=someone@example.com"` (`channel=WhatsApp` with a phone number also works).
+
+Check who is told about a project's new intake items: `curl -H "X-Api-Key: $HUB_API_KEY" "API/api/team?project=Support Test"`.
 
 ## Connect Plane
 
@@ -133,10 +136,9 @@ See every link: `curl -H "X-Api-Key: $HUB_API_KEY" API/api/plane/check`.
 `http://127.0.0.1:<HUB_API_PORT>/admin/` (on the server; sign in with `HUB_API_KEY`). One place to keep, per project:
 
 - the **project**, named exactly as in Plane: the page shows whether it is linked to a Plane project with Intake on;
-- its **employees** (name and WhatsApp number, any format): when an intake item is created for the project, each one gets a WhatsApp message with the ticket number and a link (`PLANE_TEAM_CHANNELS`);
 - its **connected apps**, which report errors to `POST /api/errors`: connecting one shows its key once; apps can be turned off, given a new key or removed.
 
-This replaces the Odoo employee API until it is ready. The same data is available as `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` and `POST/PUT/DELETE /api/projects/{id}/members[/{memberId}]`.
+Employees are not kept here: the ones assigned to the project in Odoo are told about each new intake item (work mobile, else work phone; work email). The same data is available as `GET/POST /api/projects` and `GET/PUT/DELETE /api/projects/{id}`.
 
 ## Errors from apps
 
@@ -179,7 +181,7 @@ All in `.env` (documented in `.env.example`). The ones most likely to change:
 | `PLANE_STATUS_REPLIES` | true | Reply when the ticket changes status (checked every `PLANE_STATUS_POLL_MINUTES`). |
 | `PLANE_ATTACHMENT_MAX_MB` | 5 | Largest image copied to Plane (Plane's own limit defaults to 5 MB). |
 | `REPLY_SIGNATURE` | Intellifer Support | Signs the replies. |
-| `PLANE_NOTIFY_TEAM` | true | Tell the employees on the client project about each new intake item. Waits for the Odoo employee lookup (not connected yet; until then nothing is sent). |
+| `PLANE_NOTIFY_TEAM` | true | Tell the employees on the client project about each new intake item. Employees are the ones assigned to the project in Odoo. |
 | `PLANE_TEAM_CHANNELS` | whatsapp | How employees are told: `whatsapp` (email when they have no phone), `email`, or `both`. |
 
 After changing `.env`, run `./deploy.sh` again.

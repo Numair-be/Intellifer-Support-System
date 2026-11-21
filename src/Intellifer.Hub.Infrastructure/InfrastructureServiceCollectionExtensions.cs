@@ -32,10 +32,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITeamNotificationStore, TeamNotificationStore>();
         services.AddScoped<IAppRegistry, AppRegistry>();
         services.AddScoped<IAppErrorStore, AppErrorStore>();
-        // Who works on each project: the hub's project page for now; the Odoo employee API later.
+        // Projects page (project names that apps are connected to).
         services.AddScoped<ProjectStore>();
         services.AddScoped<IProjectAdmin>(provider => provider.GetRequiredService<ProjectStore>());
-        services.AddScoped<IProjectTeamDirectory>(provider => provider.GetRequiredService<ProjectStore>());
+        // Employees assigned to the project in Odoo.
+        services.AddScoped<IProjectTeamDirectory, OdooTeamDirectory>();
         services.AddSingleton<IReplySender, GmailReplySender>();
 
         // WhatsApp gateway (OpenWA by rmyndharis). Singleton: it remembers the session id it looked up.
@@ -49,7 +50,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHttpClient<IPlaneGateway, PlaneClient>();
         services.AddHttpClient(OdooCustomerDirectory.HttpClientName);
         // Singleton so the Odoo login and field list are fetched once, not per message.
-        services.AddSingleton<ICustomerDirectory, OdooCustomerDirectory>();
+        services.AddSingleton<OdooCustomerDirectory>();
+        services.AddSingleton<ICustomerDirectory>(provider => provider.GetRequiredService<OdooCustomerDirectory>());
         return services;
     }
 }

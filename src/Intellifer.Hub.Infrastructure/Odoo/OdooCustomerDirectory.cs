@@ -10,8 +10,9 @@ namespace Intellifer.Hub.Infrastructure.Odoo;
 public sealed class OdooRpcException(string message) : Exception(message);
 
 /// <summary>
-/// Finds client contacts in Odoo through the standard JSON-RPC endpoint (/jsonrpc). Read-only: it only calls
-/// authenticate and search_read on client.contact (the custom client module, which links contacts to projects).
+/// Reads Odoo through the standard JSON-RPC endpoint (/jsonrpc) with an API key. Read-only:
+/// client.contact (who writes in, and their projects), project.project (projects and their assigned employees)
+/// and hr.employee (employee phones and emails).
 /// </summary>
 public sealed class OdooCustomerDirectory(
     IHttpClientFactory httpClients,
@@ -22,6 +23,8 @@ public sealed class OdooCustomerDirectory(
     public const string HttpClientName = "odoo";
 
     private const string ContactModel = "client.contact";
+    private const string ProjectModel = "project.project";
+    private const string EmployeeModel = "hr.employee";
 
     // Odoo phones are free text, so search by the last digits and let CustomerMatcher compare exactly.
     private const int PhoneSuffixDigits = 4;
@@ -33,28 +36,44 @@ public sealed class OdooCustomerDirectory(
 
     public bool IsConfigured => options.Value.IsConfigured;
 
-    public async Task<CustomerMatch?> FindAsync(CustomerKey key, CancellationToken cancellationToken)
-    {
-        if (!IsConfigured)
-            return null;
+    public Task<CustomerMatch?> FindAsync(CustomerKey key, CancellationToken cancellationToken) =>
+        IsConfigured
+            ? WithLoginAsync(uid => FindOnceAsync(uid, key, cancellationToken), cancellationToken)
+            : Task.FromResult<CustomerMatch?>(null);
 
+    public Task<IReadOnlyList<ClientProject>> ListProjectsAsync(CancellationToken cancellationToken) =>
+        IsConfigured
+            ? WithLoginAsync<IReadOnlyList<ClientProject>>(
+                async uid => (await ReadProjectsAsync(uid, null, cancellationToken)).Select(project => new ClientProject(project.Name)).ToList(),
+                cancellationToken)
+            : Task.FromResult<IReadOnlyList<ClientProject>>([]);
+
+    /// <summary>
+    /// The employees assigned to the Odoo project known by any of <paramref name="projectNames"/> (ignoring case,
+    /// spaces and punctuation). Null when Odoo has no such project.
+    /// </summary>
+    public Task<IReadOnlyList<TeamMember>?> GetProjectEmployeesAsync(IReadOnlyList<string> projectNames, CancellationToken cancellationToken) =>
+        IsConfigured
+            ? WithLoginAsync(uid => ReadProjectEmployeesAsync(uid, projectNames, cancellationToken), cancellationToken)
+            : Task.FromResult<IReadOnlyList<TeamMember>?>(null);
+
+    private async Task<T> WithLoginAsync<T>(Func<int, Task<T>> call, CancellationToken cancellationToken)
+    {
         try
         {
-            return await FindOnceAsync(key, cancellationToken);
+            return await call(await GetUidAsync(cancellationToken));
         }
         catch (OdooRpcException exception) when (IsSessionProblem(exception))
         {
             // The stored uid can go stale if the key is rotated; sign in again once.
             logger.LogInformation("Odoo rejected the cached login, signing in again: {Error}", exception.Message);
             _uid = null;
-            return await FindOnceAsync(key, cancellationToken);
+            return await call(await GetUidAsync(cancellationToken));
         }
     }
 
-    private async Task<CustomerMatch?> FindOnceAsync(CustomerKey key, CancellationToken cancellationToken)
+    private async Task<CustomerMatch?> FindOnceAsync(int uid, CustomerKey key, CancellationToken cancellationToken)
     {
-        var uid = await GetUidAsync(cancellationToken);
-
         // "=ilike" with no wildcards is an exact, case-insensitive match.
         var domain = key.Kind == CustomerKeyKind.Email
             ? new JsonArray("|", new JsonArray("email", "=ilike", key.Value), new JsonArray("alternate_email", "=ilike", key.Value))
@@ -67,79 +86,84 @@ public sealed class OdooCustomerDirectory(
             new JsonArray(domain),
             new JsonObject
             {
-                ["fields"] = new JsonArray("id", "name", "company_name", "email", "alternate_email", "phone", "project_id"),
+                ["fields"] = new JsonArray("id", "name", "company_name", "email", "alternate_email", "phone", "project_ids"),
                 ["limit"] = CandidateLimit,
                 ["order"] = "id"
             },
             cancellationToken);
 
         var rows = result.EnumerateArray().ToList();
-        var codes = await GetProjectCodesAsync(uid, rows, cancellationToken);
-        var candidates = rows.Select(row => ToCandidate(row, codes)).ToList();
+        // project_ids holds ids only: read the project names in one more call.
+        var projectIds = rows.SelectMany(row => Ids(row, "project_ids")).Distinct().ToList();
+        var names = projectIds.Count == 0
+            ? new Dictionary<int, string>()
+            : (await ReadProjectsAsync(uid, projectIds, cancellationToken)).ToDictionary(project => project.Id, project => project.Name);
+
+        var candidates = rows.Select(row => new ContactCandidate(
+                row.GetProperty("id").GetInt32(),
+                Text(row, "name") ?? "",
+                Text(row, "company_name"),
+                Ids(row, "project_ids").Where(names.ContainsKey).Select(id => new ClientProject(names[id])).ToList(),
+                new[] { Text(row, "email"), Text(row, "alternate_email") }.OfType<string>().ToList(),
+                new[] { Text(row, "phone") }.OfType<string>().ToList()))
+            .ToList();
         return matcher.Pick(key, candidates);
     }
 
-    public async Task<IReadOnlyList<ClientProject>> ListProjectsAsync(CancellationToken cancellationToken)
+    private sealed record OdooProject(int Id, string Name, IReadOnlyList<int> EmployeeIds);
+
+    private async Task<IReadOnlyList<OdooProject>> ReadProjectsAsync(int uid, IReadOnlyList<int>? ids, CancellationToken cancellationToken)
     {
-        if (!IsConfigured)
-            return [];
-        var uid = await GetUidAsync(cancellationToken);
+        var domain = ids is null
+            ? new JsonArray()
+            : new JsonArray(new JsonArray("id", "in", new JsonArray(ids.Select(id => (JsonNode)id).ToArray())));
         var result = await ExecuteAsync(
             uid,
-            "client.project",
+            ProjectModel,
             "search_read",
-            new JsonArray(new JsonArray()),
-            new JsonObject { ["fields"] = new JsonArray("name", "code"), ["order"] = "name" },
+            new JsonArray(domain),
+            new JsonObject { ["fields"] = new JsonArray("id", "name", "assigned_employee_ids"), ["order"] = "name" },
             cancellationToken);
         return result.EnumerateArray()
             .Where(row => Text(row, "name") is not null)
-            .Select(row => new ClientProject(Text(row, "name")!, Text(row, "code")))
+            .Select(row => new OdooProject(row.GetProperty("id").GetInt32(), Text(row, "name")!, Ids(row, "assigned_employee_ids").ToList()))
             .ToList();
     }
 
-    // client.contact only returns the project's name, so read the codes (e.g. "LNT") in one more call.
-    private async Task<Dictionary<int, string>> GetProjectCodesAsync(int uid, List<JsonElement> rows, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<TeamMember>?> ReadProjectEmployeesAsync(
+        int uid,
+        IReadOnlyList<string> projectNames,
+        CancellationToken cancellationToken)
     {
-        var ids = rows
-            .Select(row => row.TryGetProperty("project_id", out var project) && project.ValueKind == JsonValueKind.Array
-                ? project[0].GetInt32()
-                : 0)
-            .Where(id => id > 0)
-            .Distinct()
-            .ToList();
-        if (ids.Count == 0)
+        var wanted = projectNames.Select(PlaneProjectResolver.Normalize).Where(name => name.Length > 0).ToHashSet();
+        var project = (await ReadProjectsAsync(uid, null, cancellationToken))
+            .FirstOrDefault(item => wanted.Contains(PlaneProjectResolver.Normalize(item.Name)));
+        if (project is null)
+            return null;
+        if (project.EmployeeIds.Count == 0)
             return [];
 
         var result = await ExecuteAsync(
             uid,
-            "client.project",
-            "search_read",
-            new JsonArray(new JsonArray(new JsonArray("id", "in", new JsonArray(ids.Select(id => (JsonNode)id).ToArray())))),
-            new JsonObject { ["fields"] = new JsonArray("id", "code") },
+            EmployeeModel,
+            "read",
+            new JsonArray(new JsonArray(project.EmployeeIds.Select(id => (JsonNode)id).ToArray())),
+            new JsonObject { ["fields"] = new JsonArray("name", "mobile_phone", "phone", "work_phone", "work_email", "email") },
             cancellationToken);
+        // Work numbers only, never private ones: Work Mobile, then Phone, then Work Phone.
         return result.EnumerateArray()
-            .Where(row => Text(row, "code") is not null)
-            .ToDictionary(row => row.GetProperty("id").GetInt32(), row => Text(row, "code")!);
+            .Select(row => new TeamMember(
+                Text(row, "name") ?? "",
+                Text(row, "work_email") ?? Text(row, "email"),
+                Text(row, "mobile_phone") ?? Text(row, "phone") ?? Text(row, "work_phone")))
+            .ToList();
     }
 
-    private static ContactCandidate ToCandidate(JsonElement row, IReadOnlyDictionary<int, string> codes)
-    {
-        // many2one fields come back as [id, "display name"], or false when empty.
-        ClientProject? project = null;
-        if (row.TryGetProperty("project_id", out var projectId) && projectId.ValueKind == JsonValueKind.Array
-            && projectId.GetArrayLength() > 1 && projectId[1].GetString() is { } projectName)
-            project = new ClientProject(projectName, codes.GetValueOrDefault(projectId[0].GetInt32()));
-        var emails = new[] { Text(row, "email"), Text(row, "alternate_email") }.OfType<string>().ToList();
-        var phones = new[] { Text(row, "phone") }.OfType<string>().ToList();
-
-        return new ContactCandidate(
-            row.GetProperty("id").GetInt32(),
-            Text(row, "name") ?? "",
-            Text(row, "company_name"),
-            project,
-            emails,
-            phones);
-    }
+    // many2many fields come back as a list of ids.
+    private static IEnumerable<int> Ids(JsonElement row, string name) =>
+        row.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
+            ? value.EnumerateArray().Where(id => id.ValueKind == JsonValueKind.Number).Select(id => id.GetInt32()).ToList()
+            : [];
 
     // Odoo returns false, not null, for empty fields.
     private static string? Text(JsonElement row, string name) =>

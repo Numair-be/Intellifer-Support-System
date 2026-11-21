@@ -489,3 +489,4 @@ sessions/
 *.postman_environment.json
 odoopostmancollection.json
 Odoo API.json
+OdooNew.json

@@ -104,20 +104,6 @@
     </form>
 
     <div id="details" class="hidden">
-      <h3>Employees</h3>
-      <p class="meta">They get a WhatsApp message when an intake item is created for this project.</p>
-      <table>
-        <thead><tr><th>Name</th><th>WhatsApp</th><th></th></tr></thead>
-        <tbody id="members"></tbody>
-      </table>
-      <div id="membersEmpty" class="empty hidden">No employees yet.</div>
-      <form id="memberForm" class="row" style="margin-top:10px">
-        <input id="memberName" class="grow" placeholder="Employee name" maxlength="200" required>
-        <input id="memberPhone" class="grow" placeholder="WhatsApp, e.g. +91 98765 43210" maxlength="32" required>
-        <button type="submit" class="primary" id="memberSubmit">Add</button>
-        <button type="button" id="memberCancel" class="hidden">Cancel</button>
-      </form>
-
       <h3>Connected apps</h3>
       <p class="meta">Apps that report errors to the hub (<code>POST /api/errors</code>); their errors open intake items in this project.</p>
       <table>
@@ -150,7 +136,6 @@
   let key = storage.get();
   let projects = [];
   let current = null;       // project being viewed (detail), or null for "new"
-  let editingMember = null; // member id being edited
 
   async function api(path, options = {}) {
     const response = await fetch("/api" + path, {
@@ -205,7 +190,7 @@
       const item = el("li", { className: current && current.id === project.id ? "active" : "" }, [
         el("span", { className: "name", textContent: project.name }),
         el("span", { className: "meta" }, [
-          `${project.memberCount} employee${project.memberCount === 1 ? "" : "s"} · ${project.appCount} app${project.appCount === 1 ? "" : "s"} `,
+          `${project.appCount} app${project.appCount === 1 ? "" : "s"} `,
           badge(project.plane)
         ])
       ]);
@@ -227,8 +212,7 @@
     $("planeStatus").replaceChildren(badge(current.plane), " " + current.plane.detail);
     show("placeholder", false); show("projectForm", true); show("deleteProject", true); show("details", true);
     show("keyBox", false);
-    resetMemberForm();
-    renderMembers(); renderApps();
+    renderApps();
     await loadProjects();
   }
 
@@ -236,7 +220,7 @@
     current = null; showError("");
     $("formTitle").textContent = "New project";
     $("projectName").value = ""; $("projectNotes").value = "";
-    $("planeStatus").textContent = "Use the exact name of the project in Plane, so tickets and employees match.";
+    $("planeStatus").textContent = "Use the exact name of the project in Plane, so tickets and app errors land there. Employees are taken from Odoo.";
     show("placeholder", false); show("projectForm", true); show("deleteProject", false); show("details", false);
     $("projectName").focus();
     loadProjects();
@@ -255,52 +239,9 @@
 
   $("deleteProject").onclick = async () => {
     if (!current) return;
-    if (!confirm(`Delete project "${current.name}" and its employee list?\nConnected apps keep working but should be moved to another project.`)) return;
+    if (!confirm(`Delete project "${current.name}"?\nConnected apps keep working but should be moved to another project.`)) return;
     try { await api("/projects/" + current.id, { method: "DELETE" }); current = null; show("projectForm", false); show("details", false); show("placeholder", true); await loadProjects(); }
     catch (err) { showError(err.message); }
-  };
-
-  // ---------------------------------------------------------------- employees
-  function renderMembers() {
-    const body = $("members");
-    body.replaceChildren();
-    for (const member of current.members) {
-      const edit = el("button", { className: "link", textContent: "Edit", type: "button" });
-      edit.onclick = () => {
-        editingMember = member.id;
-        $("memberName").value = member.name; $("memberPhone").value = member.whatsApp;
-        $("memberSubmit").textContent = "Save"; show("memberCancel", true); $("memberName").focus();
-      };
-      const remove = el("button", { className: "link danger", textContent: "Remove", type: "button" });
-      remove.onclick = async () => {
-        if (!confirm(`Remove ${member.name} from ${current.name}?`)) return;
-        try { await api(`/projects/${current.id}/members/${member.id}`, { method: "DELETE" }); await openProject(current.id); }
-        catch (err) { showError(err.message); }
-      };
-      body.append(el("tr", {}, [
-        el("td", { textContent: member.name }),
-        el("td", { textContent: member.whatsApp }),
-        el("td", { className: "actions" }, [edit, remove])
-      ]));
-    }
-    show("membersEmpty", current.members.length === 0);
-  }
-
-  function resetMemberForm() {
-    editingMember = null;
-    $("memberName").value = ""; $("memberPhone").value = "";
-    $("memberSubmit").textContent = "Add"; show("memberCancel", false);
-  }
-  $("memberCancel").onclick = resetMemberForm;
-
-  $("memberForm").onsubmit = async (e) => {
-    e.preventDefault(); showError("");
-    const body = JSON.stringify({ name: $("memberName").value, whatsApp: $("memberPhone").value });
-    try {
-      if (editingMember) await api(`/projects/${current.id}/members/${editingMember}`, { method: "PUT", body });
-      else await api(`/projects/${current.id}/members`, { method: "POST", body });
-      await openProject(current.id);
-    } catch (err) { showError(err.message); }
   };
 
   // ---------------------------------------------------------------- connected apps

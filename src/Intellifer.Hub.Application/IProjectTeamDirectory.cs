@@ -4,8 +4,7 @@ namespace Intellifer.Hub.Application;
 public sealed record TeamMember(string Name, string? Email, string? Phone);
 
 /// <summary>
-/// Who works on a project. Today: the hub's own project page (team_projects / project_members). Later: the
-/// Odoo employee API. <see cref="UnconfiguredProjectTeamDirectory"/> turns team notifications off.
+/// Who works on a project: the employees assigned to it in Odoo. <see cref="UnconfiguredProjectTeamDirectory"/> turns team notifications off.
 /// </summary>
 public interface IProjectTeamDirectory
 {
