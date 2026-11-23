@@ -8,117 +8,98 @@ using Microsoft.Extensions.Options;
 
 namespace Intellifer.Hub.Application;
 
-public sealed record AppInfo(Guid Id, string Name, string Project, string KeyHint, bool Active, DateTimeOffset CreatedAt, DateTimeOffset? LastErrorAt);
+/// <summary>One error as an app reports it. <see cref="Project"/> is the Plane (and Odoo) project it belongs to.</summary>
+public sealed record AppErrorReport(string Project, string? Source, string Message, DateTimeOffset? OccurredAt);
 
-/// <summary>The apps allowed to report errors, and the project each belongs to.</summary>
-public interface IAppRegistry
-{
-    Task<IReadOnlyList<AppInfo>> ListAsync(CancellationToken cancellationToken);
+public sealed record AppErrorAccepted(Guid ErrorId, bool Duplicate, int Occurrences, string Status);
 
-    Task<AppInfo?> FindByKeyHashAsync(string keyHash, CancellationToken cancellationToken);
-
-    /// <summary>Null when an app with that name already exists.</summary>
-    Task<AppInfo?> CreateAsync(string name, string project, string keyHash, string keyHint, CancellationToken cancellationToken);
-
-    Task<AppInfo?> UpdateAsync(Guid id, string? project, bool? active, CancellationToken cancellationToken);
-
-    Task<AppInfo?> ReplaceKeyAsync(Guid id, string keyHash, string keyHint, CancellationToken cancellationToken);
-
-    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
-}
-
-public sealed record AppErrorReport(string Message, string? Source, string? Level, DateTimeOffset? OccurredAt);
-
-public sealed record AppErrorAccepted(Guid ErrorId, bool Repeat, int Occurrences, string Status);
-
+/// <summary>A stored error still waiting for its ticket.</summary>
 public sealed record AppErrorJob(
     Guid Id,
-    string AppName,
     string Project,
-    string Message,
+    string ProjectKey,
     string? Source,
-    string? Level,
+    string Message,
     DateTimeOffset OccurredAt,
+    DateTimeOffset ReceivedAt,
     int Occurrences,
     int Attempts);
 
 public interface IAppErrorStore
 {
-    /// <summary>The newest error of this app with this fingerprint received since <paramref name="since"/>.</summary>
-    Task<Guid?> FindRecentAsync(Guid appId, string fingerprint, DateTimeOffset since, CancellationToken cancellationToken);
+    /// <summary>The same error of this project still waiting for its ticket (inside the batch window).</summary>
+    Task<Guid?> FindPendingAsync(string projectKey, string fingerprint, CancellationToken cancellationToken);
 
-    /// <summary>Counts one more occurrence of an existing error; returns the new count.</summary>
+    /// <summary>The same error of this project already ticketed and last seen since <paramref name="since"/>.</summary>
+    Task<Guid?> FindTicketedAsync(string projectKey, string fingerprint, DateTimeOffset since, CancellationToken cancellationToken);
+
+    /// <summary>Counts one more occurrence of a stored error; returns the new count.</summary>
     Task<int> CountRepeatAsync(Guid errorId, DateTimeOffset now, CancellationToken cancellationToken);
 
-    /// <summary>New tickets this app produced since <paramref name="since"/> (repeats and skipped errors excluded).</summary>
-    Task<int> CountTicketedSinceAsync(Guid appId, DateTimeOffset since, CancellationToken cancellationToken);
+    Task<Guid> AddAsync(AppErrorReport report, string projectKey, string fingerprint, DateTimeOffset now, CancellationToken cancellationToken);
 
-    Task<Guid> AddAsync(Guid appId, AppErrorReport report, string fingerprint, DateTimeOffset now, string? skipReason, CancellationToken cancellationToken);
+    /// <summary>Errors waiting for a ticket whose retry time (if any) has come, oldest first.</summary>
+    Task<IReadOnlyList<AppErrorJob>> GetPendingAsync(int take, DateTimeOffset now, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<AppErrorJob>> GetDueAsync(int take, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>Tickets opened for this project since <paramref name="since"/>.</summary>
+    Task<int> CountTicketsSinceAsync(string projectKey, DateTimeOffset since, CancellationToken cancellationToken);
 
-    Task MarkSentAsync(Guid id, Guid projectId, PlaneIntakeCreated created, CancellationToken cancellationToken);
+    /// <summary>Marks the errors ticketed and, in the same transaction, records the team notification when there is one.</summary>
+    Task MarkSentAsync(
+        IReadOnlyList<Guid> ids,
+        Guid projectId,
+        PlaneIntakeCreated created,
+        TeamNotificationDraft? teamNotification,
+        DateTimeOffset now,
+        CancellationToken cancellationToken);
 
-    Task MarkSkippedAsync(Guid id, string reason, CancellationToken cancellationToken);
+    Task MarkSkippedAsync(IReadOnlyList<Guid> ids, string reason, CancellationToken cancellationToken);
 
-    Task MarkFailedAsync(Guid id, string error, DateTimeOffset? retryAt, CancellationToken cancellationToken);
+    Task MarkFailedAsync(IReadOnlyList<Guid> ids, string error, DateTimeOffset? retryAt, CancellationToken cancellationToken);
 }
 
-/// <summary>App keys: "hubapp_" + 40 random characters. Only their SHA-256 is stored.</summary>
-public static class AppKeys
-{
-    public const string Prefix = "hubapp_";
-
-    public static string NewKey()
-    {
-        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        return Prefix + string.Concat(Enumerable.Range(0, 40).Select(_ => alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)]));
-    }
-
-    public static string Hash(string key) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key.Trim()))).ToLowerInvariant();
-
-    public static string Hint(string key) => key[..Math.Min(key.Length, Prefix.Length + 4)] + "…";
-}
-
-/// <summary>Receives an error from an app: stores it, folds repeats into one, and caps error storms.</summary>
-public sealed partial class AppErrorIntake(
-    IAppErrorStore store,
-    IOptions<HubOptions> options,
-    TimeProvider clock,
-    ILogger<AppErrorIntake> logger)
+/// <summary>
+/// Receives an error from an app. The same error (same project, place and message) is counted instead of stored
+/// twice: while its ticket is still being collected, and for APP_ERROR_REPEAT_MINUTES after it was ticketed.
+/// </summary>
+public sealed partial class AppErrorIntake(IAppErrorStore store, IOptions<HubOptions> options, TimeProvider clock)
 {
     public const int MaxMessageLength = 100_000;
 
-    public async Task<AppErrorAccepted> AcceptAsync(AppInfo app, AppErrorReport report, CancellationToken cancellationToken)
+    public async Task<AppErrorAccepted> AcceptAsync(AppErrorReport report, CancellationToken cancellationToken)
     {
         var settings = options.Value;
         var now = clock.GetUtcNow();
-        var fingerprint = Fingerprint(report.Message);
+        var projectKey = ProjectKey(report.Project);
+        var fingerprint = Fingerprint(report.Source, report.Message);
+
+        if (await store.FindPendingAsync(projectKey, fingerprint, cancellationToken) is { } pending)
+        {
+            var count = await store.CountRepeatAsync(pending, now, cancellationToken);
+            return new AppErrorAccepted(pending, true, count, "duplicate: counted in the ticket being prepared");
+        }
 
         var repeatWindow = TimeSpan.FromMinutes(Math.Clamp(settings.AppErrorRepeatMinutes, 0, 24 * 60));
-        if (repeatWindow > TimeSpan.Zero && await store.FindRecentAsync(app.Id, fingerprint, now - repeatWindow, cancellationToken) is { } earlier)
+        if (repeatWindow > TimeSpan.Zero
+            && await store.FindTicketedAsync(projectKey, fingerprint, now - repeatWindow, cancellationToken) is { } ticketed)
         {
-            var count = await store.CountRepeatAsync(earlier, now, cancellationToken);
-            return new AppErrorAccepted(earlier, true, count, "repeat of an error already reported");
+            var count = await store.CountRepeatAsync(ticketed, now, cancellationToken);
+            return new AppErrorAccepted(ticketed, true, count, "repeat of an error already ticketed: counted, no new ticket");
         }
 
-        string? skip = null;
-        var ticketed = await store.CountTicketedSinceAsync(app.Id, now - TimeSpan.FromHours(1), cancellationToken);
-        if (ticketed >= Math.Max(1, settings.AppErrorMaxTicketsPerHour))
-        {
-            skip = $"{app.Name} already opened {ticketed} tickets in the last hour (limit {settings.AppErrorMaxTicketsPerHour}).";
-            logger.LogWarning("Error storm from {App}: storing without a ticket", app.Name);
-        }
-
-        var id = await store.AddAsync(app.Id, report, fingerprint, now, skip, cancellationToken);
-        return new AppErrorAccepted(id, false, 1, skip is null ? "queued for Plane" : "stored, not ticketed: " + skip);
+        var id = await store.AddAsync(report, projectKey, fingerprint, now, cancellationToken);
+        return new AppErrorAccepted(id, false, 1, $"queued: one ticket per project for the reports of the next {BatchSeconds(settings)} s");
     }
 
-    /// <summary>Same error = same text once numbers, hex ids and spacing are ignored (timestamps, ids, ports vary).</summary>
-    public static string Fingerprint(string message)
+    public static int BatchSeconds(HubOptions settings) => Math.Clamp(settings.AppErrorBatchSeconds, 0, 3_600);
+
+    /// <summary>Projects are matched ignoring case, spaces and punctuation, like Plane project names.</summary>
+    public static string ProjectKey(string project) => PlaneProjectResolver.Normalize(project);
+
+    /// <summary>Same error = same place and text once numbers, hex ids and spacing are ignored (timestamps, ids, ports vary).</summary>
+    public static string Fingerprint(string? source, string message)
     {
-        var text = message.Length > 4_000 ? message[..4_000] : message;
+        var text = (source ?? "") + "\n" + (message.Length > 4_000 ? message[..4_000] : message);
         text = HexOrNumber().Replace(text.ToLowerInvariant(), "#");
         text = Whitespace().Replace(text, " ").Trim();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
@@ -131,12 +112,17 @@ public sealed partial class AppErrorIntake(
     private static partial Regex Whitespace();
 }
 
-/// <summary>Turns queued app errors into Plane intake items in the app's project.</summary>
+/// <summary>
+/// Turns queued app errors into Plane intake items: one ticket per project for all reports that arrived within
+/// APP_ERROR_BATCH_SECONDS of its first one; duplicates are already counted. The project's team is then told.
+/// </summary>
 public sealed class AppErrorDispatcher(
     IAppErrorStore store,
     IPlaneGateway plane,
     PlaneProjectResolver projects,
+    IProjectTeamDirectory team,
     IOptions<HubOptions> hubOptions,
+    IOptions<PlaneOptions> planeOptions,
     TimeProvider clock,
     ILogger<AppErrorDispatcher> logger)
 {
@@ -147,70 +133,133 @@ public sealed class AppErrorDispatcher(
         if (!plane.IsConfigured)
             return 0;
 
+        var settings = hubOptions.Value;
+        var now = clock.GetUtcNow();
+        var window = TimeSpan.FromSeconds(AppErrorIntake.BatchSeconds(settings));
         var created = 0;
-        foreach (var job in await store.GetDueAsync(10, clock.GetUtcNow(), cancellationToken))
+        var batches = (await store.GetPendingAsync(500, now, cancellationToken))
+            .GroupBy(job => job.ProjectKey)
+            // Still collecting: the first report of this project came in less than the batch window ago.
+            .Where(group => group.Min(job => job.ReceivedAt) <= now - window)
+            .Take(10)
+            .ToList();
+
+        foreach (var batch in batches)
         {
+            var errors = batch.OrderBy(job => job.ReceivedAt).ToList();
+            var ids = errors.Select(job => job.Id).ToList();
+            var projectName = errors[0].Project.Trim();
             try
             {
-                var resolved = await projects.ResolveAsync([new ClientProject(job.Project, job.Project)], cancellationToken);
+                var resolved = await projects.ResolveAsync([new ClientProject(projectName, projectName)], cancellationToken);
                 if (resolved is null)
                 {
-                    await store.MarkSkippedAsync(job.Id, $"Project '{job.Project}' of app {job.AppName} has no matching Plane project.", cancellationToken);
+                    await store.MarkSkippedAsync(ids, $"No Plane project matches '{projectName}'.", cancellationToken);
+                    logger.LogWarning("App errors for {Project} skipped: no matching Plane project", projectName);
                     continue;
                 }
 
                 var target = resolved.Value.Plane;
                 if (!target.IntakeEnabled)
                 {
-                    await store.MarkSkippedAsync(job.Id, $"Intake is off in Plane project {target.Name} ({target.Identifier}).", cancellationToken);
+                    await store.MarkSkippedAsync(ids, $"Intake is off in Plane project {target.Name} ({target.Identifier}).", cancellationToken);
                     continue;
                 }
 
-                var ticket = await plane.CreateIntakeAsync(target.Id, Title(job), Description(job, target), cancellationToken);
-                await store.MarkSentAsync(job.Id, target.Id, ticket, cancellationToken);
+                var limit = Math.Max(1, settings.AppErrorMaxTicketsPerHour);
+                var recent = await store.CountTicketsSinceAsync(batch.Key, now - TimeSpan.FromHours(1), cancellationToken);
+                if (recent >= limit)
+                {
+                    await store.MarkSkippedAsync(ids, $"{projectName} already has {recent} error tickets in the last hour (limit {limit}).", cancellationToken);
+                    logger.LogWarning("Error storm for {Project}: {Count} report(s) stored without a ticket", projectName, ids.Count);
+                    continue;
+                }
+
+                var title = Title(errors);
+                var ticket = await plane.CreateIntakeAsync(target.Id, title, Description(errors, target), cancellationToken);
+                // The employees assigned to the project (in Odoo) are told, like for customer tickets.
+                var teamNotification = planeOptions.Value.NotifyTeam && team.IsConfigured
+                    ? new TeamNotificationDraft(
+                        null,
+                        projectName,
+                        null,
+                        target.Name,
+                        target.Id,
+                        ReplyComposer.TicketNumber(target.Identifier, ticket.SequenceId) is { Length: > 0 } number ? number : "(new item)",
+                        TextClip.Clip(title, 160),
+                        $"app errors of {projectName}",
+                        "")
+                    : null;
+                await store.MarkSentAsync(ids, target.Id, ticket, teamNotification, clock.GetUtcNow(), cancellationToken);
                 created++;
                 logger.LogInformation(
-                    "Opened Plane intake {Identifier}-{Sequence} for an error from {App}",
+                    "Opened Plane intake {Identifier}-{Sequence} for {Count} app error(s) of {Project}",
                     target.Identifier,
                     ticket.SequenceId,
-                    job.AppName);
+                    errors.Count,
+                    projectName);
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                var attempts = job.Attempts + 1;
+                var attempts = errors.Max(job => job.Attempts) + 1;
                 var error = TextClip.Clip(exception.Message, 1_000);
                 DateTimeOffset? retryAt = attempts >= MaxAttempts
                     ? null
                     : clock.GetUtcNow() + TimeSpan.FromSeconds(Math.Min(30 * Math.Pow(2, attempts - 1), 3_600));
-                await store.MarkFailedAsync(job.Id, error, retryAt, cancellationToken);
-                logger.LogWarning("Sending the error from {App} to Plane failed (attempt {Attempts}): {Error}", job.AppName, attempts, error);
+                await store.MarkFailedAsync(ids, error, retryAt, cancellationToken);
+                logger.LogWarning("Sending the errors of {Project} to Plane failed (attempt {Attempts}): {Error}", projectName, attempts, error);
             }
         }
 
         return created;
     }
 
-    /// <summary>"[Error] crm-backend – 2026-11-20 18:33 (UTC+05:30)": error, date, and where it came from.</summary>
-    public string Title(AppErrorJob job)
+    /// <summary>
+    /// One error: "[Error] KSB / DataParserController.ExtractTables – 2026-11-23 13:15 (UTC+05:30)".
+    /// Several: "[Error] KSB – 3 different errors – 2026-11-23 13:15 (UTC+05:30)".
+    /// </summary>
+    public string Title(IReadOnlyList<AppErrorJob> errors)
     {
-        var where = string.IsNullOrWhiteSpace(job.Source) ? job.AppName : $"{job.AppName} / {job.Source.Trim()}";
-        return TextClip.Clip($"[Error] {where} – {Local(job.OccurredAt)}", 255);
+        var first = errors[0];
+        var project = first.Project.Trim();
+        var when = Local(errors.Min(job => job.OccurredAt));
+        if (errors.Count == 1)
+        {
+            var where = string.IsNullOrWhiteSpace(first.Source) ? project : $"{project} / {first.Source.Trim()}";
+            return TextClip.Clip($"[Error] {where} – {when}", 255);
+        }
+
+        return TextClip.Clip($"[Error] {project} – {errors.Count} different errors – {when}", 255);
     }
 
-    public string Description(AppErrorJob job, PlaneProject project)
+    public string Description(IReadOnlyList<AppErrorJob> errors, PlaneProject project)
     {
+        var reports = errors.Sum(job => job.Occurrences);
         var html = new StringBuilder();
-        html.Append("<p><strong>App:</strong> ").Append(Encode(job.AppName)).Append("<br>");
-        if (!string.IsNullOrWhiteSpace(job.Source))
-            html.Append("<strong>Source:</strong> ").Append(Encode(job.Source)).Append("<br>");
-        if (!string.IsNullOrWhiteSpace(job.Level))
-            html.Append("<strong>Level:</strong> ").Append(Encode(job.Level)).Append("<br>");
-        html.Append("<strong>Project:</strong> ").Append(Encode($"{project.Name} ({project.Identifier})")).Append("<br>");
-        html.Append("<strong>Occurred:</strong> ").Append(Encode(Local(job.OccurredAt))).Append("</p>");
-        if (job.Occurrences > 1)
-            html.Append("<p><em>Seen ").Append(job.Occurrences).Append(" times before this ticket was created.</em></p>");
-        // The message exactly as received, keeping its line breaks.
-        html.Append("<pre><code>").Append(Encode(job.Message)).Append("</code></pre>");
+        html.Append("<p><strong>Project:</strong> ").Append(Encode($"{project.Name} ({project.Identifier})")).Append("<br>");
+        html.Append("<strong>Reported as:</strong> ").Append(Encode(errors[0].Project.Trim())).Append("<br>");
+        html.Append("<strong>Errors:</strong> ").Append(errors.Count).Append(errors.Count == 1 ? " error" : " different errors")
+            .Append(", ").Append(reports).Append(reports == 1 ? " report" : " reports").Append("<br>");
+        html.Append("<strong>Occurred:</strong> ").Append(Encode(Local(errors.Min(job => job.OccurredAt))));
+        if (errors.Count > 1)
+            html.Append(" to ").Append(Encode(Local(errors.Max(job => job.OccurredAt))));
+        html.Append("</p>");
+
+        for (var index = 0; index < errors.Count; index++)
+        {
+            var error = errors[index];
+            if (errors.Count > 1)
+                html.Append("<h3>").Append(index + 1).Append(". ").Append(Encode(string.IsNullOrWhiteSpace(error.Source) ? "Error" : error.Source.Trim())).Append("</h3>");
+            else if (!string.IsNullOrWhiteSpace(error.Source))
+                html.Append("<p><strong>Source:</strong> ").Append(Encode(error.Source.Trim())).Append("</p>");
+            html.Append("<p><strong>Occurred:</strong> ").Append(Encode(Local(error.OccurredAt)));
+            if (error.Occurrences > 1)
+                html.Append(" · <strong>Reported ").Append(error.Occurrences).Append(" times</strong>");
+            html.Append("</p>");
+            // The message and stack trace exactly as received, keeping their line breaks.
+            html.Append("<pre><code>").Append(Encode(error.Message)).Append("</code></pre>");
+        }
+
         return html.ToString();
     }
 

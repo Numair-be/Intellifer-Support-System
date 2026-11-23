@@ -11,14 +11,15 @@ public enum TeamNotificationState
     Failed = 3
 }
 
-/// <summary>Tells the employees on a client project that a new intake item was created for it.</summary>
+/// <summary>Tells the employees on a project that a new intake item was created for it (customer message or app error).</summary>
 public sealed class TeamNotification
 {
     public Guid Id { get; set; }
 
-    public Guid ConversationId { get; set; }
+    /// <summary>The customer conversation; null when the ticket came from an app error.</summary>
+    public Guid? ConversationId { get; set; }
 
-    public Conversation Conversation { get; set; } = null!;
+    public Conversation? Conversation { get; set; }
 
     /// <summary>The Odoo client project, used to look up its team.</summary>
     public string ClientProject { get; set; } = "";

@@ -28,7 +28,7 @@ public sealed class UnconfiguredProjectTeamDirectory : IProjectTeamDirectory
 
 /// <summary>A new intake item whose project team still has to be told.</summary>
 public sealed record TeamNotificationDraft(
-    Guid ConversationId,
+    Guid? ConversationId,
     string ClientProject,
     string? ClientProjectCode,
     string PlaneProject,
@@ -40,7 +40,7 @@ public sealed record TeamNotificationDraft(
 
 public sealed record TeamNotificationJob(
     Guid Id,
-    Guid ConversationId,
+    Guid? ConversationId,
     string ClientProject,
     string? ClientProjectCode,
     string PlaneProject,

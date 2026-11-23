@@ -28,10 +28,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("AppId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("app_id");
-
                     b.Property<string>("Fingerprint")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -41,11 +37,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_seen_at");
-
-                    b.Property<string>("Level")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("level");
 
                     b.Property<string>("Message")
                         .IsRequired()
@@ -91,6 +82,18 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("plane_work_item_id");
 
+                    b.Property<string>("Project")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("project");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("project_key");
+
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("received_at");
@@ -100,73 +103,21 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasColumnName("source");
 
+                    b.Property<DateTimeOffset?>("TicketedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ticketed_at");
+
                     b.HasKey("Id")
-                        .HasName("pk_app_errors");
+                        .HasName("pk_app_error_reports");
 
                     b.HasIndex("PlaneState", "PlaneNextAttemptAt")
-                        .HasDatabaseName("ix_app_errors_queue")
+                        .HasDatabaseName("ix_app_error_reports_queue")
                         .HasFilter("plane_state = 'Pending'");
 
-                    b.HasIndex("AppId", "Fingerprint", "ReceivedAt")
-                        .HasDatabaseName("ix_app_errors_repeat");
+                    b.HasIndex("ProjectKey", "Fingerprint", "PlaneState")
+                        .HasDatabaseName("ix_app_error_reports_same");
 
-                    b.ToTable("app_errors", (string)null);
-                });
-
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.AppRegistration", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Active")
-                        .HasColumnType("boolean")
-                        .HasColumnName("active");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("KeyHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("key_hash");
-
-                    b.Property<string>("KeyHint")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("key_hint");
-
-                    b.Property<DateTimeOffset?>("LastErrorAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_error_at");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Project")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
-                        .HasColumnName("project");
-
-                    b.HasKey("Id")
-                        .HasName("pk_apps");
-
-                    b.HasIndex("KeyHash")
-                        .IsUnique()
-                        .HasDatabaseName("ux_apps_key_hash");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasDatabaseName("ux_apps_name");
-
-                    b.ToTable("apps", (string)null);
+                    b.ToTable("app_error_reports", (string)null);
                 });
 
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.ChannelHealthRecord", b =>
@@ -527,7 +478,7 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("channel");
 
-                    b.Property<Guid>("ConversationId")
+                    b.Property<Guid?>("ConversationId")
                         .HasColumnType("uuid")
                         .HasColumnName("conversation_id");
 
@@ -642,7 +593,7 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
 
-                    b.Property<Guid>("ConversationId")
+                    b.Property<Guid?>("ConversationId")
                         .HasColumnType("uuid")
                         .HasColumnName("conversation_id");
 
@@ -712,53 +663,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                     b.ToTable("team_notifications", (string)null);
                 });
 
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.TeamProject", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("notes");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id")
-                        .HasName("pk_team_projects");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasDatabaseName("ux_team_projects_name");
-
-                    b.ToTable("team_projects", (string)null);
-                });
-
-            modelBuilder.Entity("Intellifer.Hub.Domain.Entities.AppError", b =>
-                {
-                    b.HasOne("Intellifer.Hub.Domain.Entities.AppRegistration", "App")
-                        .WithMany()
-                        .HasForeignKey("AppId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_app_errors_apps_app_id");
-
-                    b.Navigation("App");
-                });
-
             modelBuilder.Entity("Intellifer.Hub.Domain.Entities.HubMessage", b =>
                 {
                     b.HasOne("Intellifer.Hub.Domain.Entities.Conversation", "Conversation")
@@ -789,7 +693,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
                         .HasConstraintName("fk_outbound_messages_conversations_conversation_id");
 
                     b.Navigation("Conversation");
@@ -801,7 +704,6 @@ namespace Intellifer.Hub.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
                         .HasConstraintName("fk_team_notifications_conversations_conversation_id");
 
                     b.Navigation("Conversation");

@@ -131,41 +131,39 @@ An Odoo client project links to the Plane project whose name or identifier equal
 
 See every link: `curl -H "X-Api-Key: $HUB_API_KEY" API/api/plane/check`.
 
-## Projects page
-
-`http://127.0.0.1:<HUB_API_PORT>/admin/` (on the server; sign in with `HUB_API_KEY`). One place to keep, per project:
-
-- the **project**, named exactly as in Plane: the page shows whether it is linked to a Plane project with Intake on;
-- its **connected apps**, which report errors to `POST /api/errors`: connecting one shows its key once; apps can be turned off, given a new key or removed.
-
-Employees are not kept here: the ones assigned to the project in Odoo are told about each new intake item (work mobile, else work phone; work email). The same data is available as `GET/POST /api/projects` and `GET/PUT/DELETE /api/projects/{id}`.
-
 ## Errors from apps
 
-Apps on the server can report errors to the hub. Each one becomes an intake item in the app's Plane project, titled with "Error", the date and where it came from, e.g. `[Error] crm-backend / orders-job – 2026-11-20 19:25 (UTC+05:30)`, with the message exactly as sent in the body.
-
-**Register an app** (hub admin key) and note the key it returns, which is shown only once:
+Apps on the server report errors to the hub; they become intake items in Plane, and the employees assigned to that project in Odoo are told (`PLANE_NOTIFY_TEAM`, `PLANE_TEAM_CHANNELS`). Nothing has to be registered first.
 
 ```bash
-curl -s -X POST -H "X-Api-Key: $HUB_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name":"crm-backend","project":"Support Test"}' API/api/apps
+curl -s -X POST -H "Content-Type: application/json" http://127.0.0.1:<HUB_API_PORT>/api/errors -d '{
+  "projectName": "Support Test",
+  "controller": "DataParserController",
+  "method": "ExtractTables",
+  "errorMessage": "Object reference not set to an instance of an object.",
+  "stackTrace": "at IFRMTC.Controllers.DataParserController...",
+  "timestamp": "2026-11-23T07:45:00Z"
+}'
 ```
 
-`project` is the project name or code; it is matched to a Plane project like Odoo client projects (case, spaces and punctuation ignored, `PLANE_PROJECT_MAP` overrides). Intake must be on in that Plane project.
+- **`projectName` picks the project**: matched to a Plane project by name or identifier (case, spaces and punctuation ignored; `PLANE_PROJECT_MAP` for names that differ, e.g. `KSBMERGERMTC_SERVER=KSB`). Intake must be on in that Plane project. The same name finds the project's employees in Odoo.
+- `projectName` and `errorMessage` are required; `controller`, `method`, `stackTrace` and `timestamp` (ISO 8601) are optional. The answer is `202 Accepted` straight away.
+- **One ticket per project per minute.** After the first report of a project the hub waits `APP_ERROR_BATCH_SECONDS` (60) for more:
+  - the same error again (same project, controller.method and message, numbers and ids ignored) is **counted** ("Reported 3 times");
+  - other errors of the same project are **combined into that one ticket**, each with its own section;
+  - errors of other projects get **their own tickets**.
+- Title: `[Error] Support Test / DataParserController.ExtractTables – 2026-11-23 13:15 (UTC+05:30)`, or `[Error] Support Test – 3 different errors – …` when several were combined.
+- The same error again within `APP_ERROR_REPEAT_MINUTES` (60) after its ticket is only counted; a project gets at most `APP_ERROR_MAX_TICKETS_PER_HOUR` (30) error tickets an hour, more are stored and skipped.
+- The hub port only listens on the server itself (`HUB_API_BIND=127.0.0.1`). To require a key anyway, set `APP_ERROR_KEY` and send it as the `X-App-Key` header.
+- From a Docker container on the same server: join the `intellifer` network and use `http://hub-api:8080/api/errors`.
 
-**From the app**, with its own key:
+Look at recent app errors:
 
 ```bash
-curl -s -X POST -H "X-App-Key: hubapp_…" -H "Content-Type: application/json" \
-  -d '{"message":"NullReferenceException in OrderService.Save()\n   at ...","source":"orders-job","level":"error"}' \
-  http://127.0.0.1:<HUB_API_PORT>/api/errors
+docker compose -p intellifer exec hub-db psql -U intellifer -d intellifer_hub -c \
+  "select project, source, occurrences, plane_state, plane_sequence_id, left(plane_error,80)
+   from app_error_reports order by received_at desc limit 10;"
 ```
-
-Only `message` is required; `source` (which part of the app), `level` and `occurredAt` (ISO 8601) are optional. A plain-text body is taken as the message. The answer is `202 Accepted` straight away; the worker creates the Plane item (with retries if Plane is down).
-
-The same error from the same app within an hour (numbers and ids ignored) is counted instead of opening another ticket, and each app opens at most 30 tickets an hour; more are stored and skipped (`APP_ERROR_REPEAT_MINUTES`, `APP_ERROR_MAX_TICKETS_PER_HOUR`).
-
-Manage apps with the hub admin key: `GET /api/apps`, `PATCH /api/apps/{id}` with `{"project": "...", "active": false}`, `POST /api/apps/{id}/key` (new key; the old one stops working), `DELETE /api/apps/{id}`.
 
 ## Settings
 
@@ -182,6 +180,7 @@ All in `.env` (documented in `.env.example`). The ones most likely to change:
 | `PLANE_ATTACHMENT_MAX_MB` | 5 | Largest image copied to Plane (Plane's own limit defaults to 5 MB). |
 | `REPLY_SIGNATURE` | Intellifer Support | Signs the replies. |
 | `PLANE_NOTIFY_TEAM` | true | Tell the employees on the client project about each new intake item. Employees are the ones assigned to the project in Odoo. |
+| `APP_ERROR_BATCH_SECONDS` | 60 | After an app's first error for a project, wait this long for more; they become one ticket. |
 | `PLANE_TEAM_CHANNELS` | whatsapp | How employees are told: `whatsapp` (email when they have no phone), `email`, or `both`. |
 
 After changing `.env`, run `./deploy.sh` again.
@@ -223,6 +222,8 @@ Queues that retry on their own and keep a reason when they give up: `messages.pl
 | `GET /api/conversations`, `/api/conversations/{id}/messages` | `X-Api-Key` |
 | `GET /api/customers/lookup?channel=&sender=` | `X-Api-Key` |
 | `GET /api/plane/check` | `X-Api-Key` |
+| `GET /api/team?project=` | `X-Api-Key` |
+| `POST /api/errors` | none, or `X-App-Key` when `APP_ERROR_KEY` is set |
 
 ## Development
 

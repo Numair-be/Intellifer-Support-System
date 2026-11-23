@@ -14,9 +14,10 @@ public sealed class OutboundMessage
 {
     public Guid Id { get; set; }
 
-    public Guid ConversationId { get; set; }
+    /// <summary>The customer conversation; null for messages not tied to one (e.g. telling the team about an app error).</summary>
+    public Guid? ConversationId { get; set; }
 
-    public Conversation Conversation { get; set; } = null!;
+    public Conversation? Conversation { get; set; }
 
     public ChannelType Channel { get; set; }
 

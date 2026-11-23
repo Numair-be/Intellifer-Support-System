@@ -30,11 +30,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IOutboundQueue, OutboundQueue>();
         services.AddScoped<IAttachmentStore, AttachmentStore>();
         services.AddScoped<ITeamNotificationStore, TeamNotificationStore>();
-        services.AddScoped<IAppRegistry, AppRegistry>();
         services.AddScoped<IAppErrorStore, AppErrorStore>();
-        // Projects page (project names that apps are connected to).
-        services.AddScoped<ProjectStore>();
-        services.AddScoped<IProjectAdmin>(provider => provider.GetRequiredService<ProjectStore>());
         // Employees assigned to the project in Odoo.
         services.AddScoped<IProjectTeamDirectory, OdooTeamDirectory>();
         services.AddSingleton<IReplySender, GmailReplySender>();

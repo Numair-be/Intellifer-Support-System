@@ -42,6 +42,8 @@ services:
       Hub__TimeZone: ${HUB_TIME_ZONE:-Asia/Kolkata}
       Hub__AppErrorRepeatMinutes: ${APP_ERROR_REPEAT_MINUTES:-60}
       Hub__AppErrorMaxTicketsPerHour: ${APP_ERROR_MAX_TICKETS_PER_HOUR:-30}
+      Hub__AppErrorBatchSeconds: ${APP_ERROR_BATCH_SECONDS:-60}
+      Hub__AppErrorKey: ${APP_ERROR_KEY:-}
       OpenWa__WebhookSecret: ${OPENWA_WEBHOOK_SECRET:-dev-only-openwa-secret}
       OpenWa__BaseUrl: http://openwa:2785
       OpenWa__ApiKey: ${WA_API_KEY:-dev-only-openwa-api-key}
@@ -94,6 +96,8 @@ services:
       Hub__TimeZone: ${HUB_TIME_ZONE:-Asia/Kolkata}
       Hub__AppErrorRepeatMinutes: ${APP_ERROR_REPEAT_MINUTES:-60}
       Hub__AppErrorMaxTicketsPerHour: ${APP_ERROR_MAX_TICKETS_PER_HOUR:-30}
+      Hub__AppErrorBatchSeconds: ${APP_ERROR_BATCH_SECONDS:-60}
+      Hub__AppErrorKey: ${APP_ERROR_KEY:-}
       Gmail__ClientId: ${GMAIL_CLIENT_ID:-}
       Gmail__ClientSecret: ${GMAIL_CLIENT_SECRET:-}
       Gmail__RefreshToken: ${GMAIL_REFRESH_TOKEN:-}

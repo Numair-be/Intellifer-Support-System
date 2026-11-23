@@ -5,7 +5,7 @@ namespace Intellifer.Hub.Application;
 /// <summary>A reply waiting to go out.</summary>
 public sealed record OutboundJob(
     Guid Id,
-    Guid ConversationId,
+    Guid? ConversationId,
     ChannelType Channel,
     string Recipient,
     string ThreadKey,
@@ -15,7 +15,7 @@ public sealed record OutboundJob(
 
 /// <summary>A reply to queue: who, where, and what.</summary>
 public sealed record OutboundDraft(
-    Guid ConversationId,
+    Guid? ConversationId,
     ChannelType Channel,
     string Recipient,
     string ThreadKey,
