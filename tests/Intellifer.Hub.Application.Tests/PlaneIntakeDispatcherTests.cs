@@ -378,6 +378,16 @@ public sealed class PlaneIntakeDispatcherTests
     }
 
     [Fact]
+    public void Times_are_shown_in_ist()
+    {
+        var job = Job(Guid.NewGuid(), "login is broken", new DateTimeOffset(2026, 11, 26, 4, 47, 30, TimeSpan.Zero));
+
+        Assert.Contains("<strong>Received:</strong> 2026-11-26 10:17 IST", PlaneIntakeDispatcher.Description(job));
+        Assert.Contains("2026-11-26 10:17 IST", PlaneIntakeDispatcher.Comment(job));
+        Assert.Equal("2026-11-26 04:47 UTC", HubTime.Format(job.ReceivedAt, "UTC"));
+    }
+
+    [Fact]
     public void Customer_text_is_html_encoded()
     {
         var job = Job(Guid.NewGuid(), "<script>alert(1)</script>\nline two", Now) with { CustomerName = "Asha & Co" };
@@ -420,6 +430,7 @@ public sealed class PlaneIntakeDispatcherTests
             new IssueClassifier(options),
             new FakeTeam(teamConnected),
             options,
+            Microsoft.Extensions.Options.Options.Create(new HubOptions()),
             clock,
             NullLogger<PlaneIntakeDispatcher>.Instance);
     }

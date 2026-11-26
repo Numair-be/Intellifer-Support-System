@@ -20,6 +20,7 @@ public sealed class PlaneIntakeDispatcher(
     IssueClassifier classifier,
     IProjectTeamDirectory team,
     IOptions<PlaneOptions> options,
+    IOptions<HubOptions> hubOptions,
     TimeProvider clock,
     ILogger<PlaneIntakeDispatcher> logger)
 {
@@ -124,7 +125,7 @@ public sealed class PlaneIntakeDispatcher(
                 .ToList();
             // Title from the message that describes the problem, not from a "hi" before it.
             var headline = verified.FirstOrDefault(job => classifier.IsIssue(job.Subject, job.Body)) ?? verified[0];
-            var created = await plane.CreateIntakeAsync(project.Id, Title(headline), Description(verified), cancellationToken);
+            var created = await plane.CreateIntakeAsync(project.Id, Title(headline), Description(verified, hubOptions.Value.TimeZone), cancellationToken);
             var acknowledgement = settings.AcknowledgeIntake ? Acknowledgement(headline, project, created, settings) : null;
             // Recorded only while the team lookup is connected, so connecting it later does not notify old tickets.
             var teamNotification = settings.NotifyTeam && team.IsConfigured && check.ClientProject is { } clientProject
@@ -188,7 +189,7 @@ public sealed class PlaneIntakeDispatcher(
                 var project = job.PlaneProjectId ?? settings.DefaultProjectId
                     ?? throw new InvalidOperationException(
                         "This conversation's Plane project is unknown. Set PLANE_PROJECT_ID to the project of older intake items.");
-                await plane.AddCommentAsync(project, workItemId, Comment(job), job.MessageId.ToString(), cancellationToken);
+                await plane.AddCommentAsync(project, workItemId, Comment(job, hubOptions.Value.TimeZone), job.MessageId.ToString(), cancellationToken);
                 await queue.MarkSentAsync(job.MessageId, clock.GetUtcNow(), cancellationToken);
                 logger.LogInformation("Added message {MessageId} to Plane work item {WorkItemId}", job.MessageId, workItemId);
                 sent++;
@@ -271,13 +272,13 @@ public sealed class PlaneIntakeDispatcher(
     public static string Description(PlaneJob job) => Description([job]);
 
     /// <summary>One ticket for a burst of messages: who and when once, then every message in order.</summary>
-    public static string Description(IReadOnlyList<PlaneJob> messages)
+    public static string Description(IReadOnlyList<PlaneJob> messages, string? timeZone = HubTime.DefaultZone)
     {
         var first = messages[0];
         var html = new StringBuilder();
         html.Append("<p><strong>From:</strong> ").Append(Encode(Who(first))).Append("<br>");
         html.Append("<strong>Channel:</strong> ").Append(Encode(first.Channel.ToString())).Append("<br>");
-        html.Append("<strong>Received:</strong> ").Append(Encode(first.ReceivedAt.ToString("yyyy-MM-dd HH:mm 'UTC'"))).Append("</p>");
+        html.Append("<strong>Received:</strong> ").Append(Encode(HubTime.Format(first.ReceivedAt, timeZone))).Append("</p>");
         var subject = messages.Select(job => job.Subject).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
         if (subject is not null)
             html.Append("<p><strong>Subject:</strong> ").Append(Encode(subject)).Append("</p>");
@@ -290,16 +291,16 @@ public sealed class PlaneIntakeDispatcher(
 
         foreach (var job in messages)
         {
-            html.Append("<p><strong>").Append(Encode(job.ReceivedAt.ToString("HH:mm:ss 'UTC'"))).Append("</strong></p>");
+            html.Append("<p><strong>").Append(Encode(HubTime.Format(job.ReceivedAt, timeZone, "HH:mm:ss"))).Append("</strong></p>");
             html.Append(Body(job));
         }
 
         return html.ToString();
     }
 
-    public static string Comment(PlaneJob job) =>
+    public static string Comment(PlaneJob job, string? timeZone = HubTime.DefaultZone) =>
         $"<p><strong>{Encode(Who(job))}</strong> via {Encode(job.Channel.ToString())}, " +
-        $"{Encode(job.ReceivedAt.ToString("yyyy-MM-dd HH:mm 'UTC'"))}</p>{Body(job)}";
+        $"{Encode(HubTime.Format(job.ReceivedAt, timeZone))}</p>{Body(job)}";
 
     private static string Who(PlaneJob job)
     {

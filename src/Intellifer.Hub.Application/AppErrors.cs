@@ -215,8 +215,8 @@ public sealed class AppErrorDispatcher(
     }
 
     /// <summary>
-    /// One error: "[Error] KSB / DataParserController.ExtractTables – 2026-11-23 13:15 (UTC+05:30)".
-    /// Several: "[Error] KSB – 3 different errors – 2026-11-23 13:15 (UTC+05:30)".
+    /// One error: "[Error] KSB / DataParserController.ExtractTables – 2026-11-23 13:15 IST".
+    /// Several: "[Error] KSB – 3 different errors – 2026-11-23 13:15 IST".
     /// </summary>
     public string Title(IReadOnlyList<AppErrorJob> errors)
     {
@@ -263,23 +263,7 @@ public sealed class AppErrorDispatcher(
         return html.ToString();
     }
 
-    private string Local(DateTimeOffset time)
-    {
-        TimeZoneInfo zone;
-        try
-        {
-            zone = TimeZoneInfo.FindSystemTimeZoneById(hubOptions.Value.TimeZone);
-        }
-        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            zone = TimeZoneInfo.Utc;
-        }
-
-        var local = TimeZoneInfo.ConvertTime(time, zone);
-        var offset = local.Offset;
-        var label = offset == TimeSpan.Zero ? "UTC" : $"UTC{(offset < TimeSpan.Zero ? "-" : "+")}{offset:hh\\:mm}";
-        return $"{local:yyyy-MM-dd HH:mm} ({label})";
-    }
+    private string Local(DateTimeOffset time) => HubTime.Format(time, hubOptions.Value.TimeZone);
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
 }

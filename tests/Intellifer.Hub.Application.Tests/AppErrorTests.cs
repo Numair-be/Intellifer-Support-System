@@ -105,7 +105,7 @@ public sealed class AppErrorDispatcherTests
 
         var (projectId, title, html) = Assert.Single(_plane.Created);
         Assert.Equal(SupportTest.Id, projectId);
-        Assert.Equal("[Error] Support Test / DataParserController.ExtractTables – 2026-11-23 13:15 (UTC+05:30)", title);
+        Assert.Equal("[Error] Support Test / DataParserController.ExtractTables – 2026-11-23 13:15 IST", title);
         Assert.Contains("<pre><code>Object reference not set\nat IFRMTC.Controllers.DataParserController</code></pre>", html);
     }
 
@@ -118,7 +118,7 @@ public sealed class AppErrorDispatcherTests
         await Dispatcher().RunOnceAsync(CancellationToken.None);
 
         var (_, title, html) = Assert.Single(_plane.Created);
-        Assert.Equal("[Error] Support Test – 2 different errors – 2026-11-23 13:15 (UTC+05:30)", title);
+        Assert.Equal("[Error] Support Test – 2 different errors – 2026-11-23 13:15 IST", title);
         Assert.Contains("<h3>1. A.One</h3>", html);
         Assert.Contains("<h3>2. B.Two</h3>", html);
         Assert.Contains("Reported 3 times", html);
